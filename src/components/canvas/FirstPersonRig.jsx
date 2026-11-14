@@ -358,41 +358,14 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
       if (storeState.observedTargetId !== closestId) {
         storeState.observeTarget(closestId);
       }
-      const nowMs = performance.now();
-      const scanCooldownReady =
-        lastHoverTriggerRef.current.scanTargetId !== closestId ||
-        nowMs - lastHoverTriggerRef.current.scanAt > 1800;
-      if (
-        closestDist <= 9.0 &&
-        !collectedIds.includes(closestId) &&
-        !storeState.scanningState.active &&
-        scanCooldownReady
-      ) {
-        lastHoverTriggerRef.current.scanTargetId = closestId;
-        lastHoverTriggerRef.current.scanAt = nowMs;
-        storeState.startScan(closestId);
-      }
     }
 
-    // Lander airlock / sample return locker proximity & reticle gaze hover check
+    // Lander airlock / sample return locker proximity check
     const airlockDist = Math.hypot(camera.position.x, camera.position.z - 5.95);
     const lockerDist = Math.hypot(camera.position.x - 1.38, camera.position.z - 6.22);
     const landerBayDist = Math.min(airlockDist, lockerDist);
     const nearLander = landerBayDist <= 4.0;
     storeState.setLanderProximity(nearLander, Math.hypot(camera.position.x, camera.position.z - 8));
-
-    const landerBaseY = getTerrainHeightAt(0, 8, site.terrainProfile) + 1.5;
-    toObjVec.set(-camera.position.x, landerBaseY - camera.position.y, 5.95 - camera.position.z).normalize();
-    const landerLookDot = lookDirVec.dot(toObjVec);
-    if (
-      airlockDist <= 6.5 &&
-      landerLookDot > 0.9 &&
-      (carriedCount > 0 || physio.oxygen < 95) &&
-      performance.now() - lastHoverTriggerRef.current.landerAt > 2500
-    ) {
-      lastHoverTriggerRef.current.landerAt = performance.now();
-      storeState.resupplyAndOffloadAtLander();
-    }
 
     // Throttled HUD telemetry & Martian EVA physiology simulation (~10–13 Hz)
     telemetryTimerRef.current += dt;

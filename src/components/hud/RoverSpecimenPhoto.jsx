@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 
 function LeopardMudstoneSvg({ gradId }) {
   const spots = [
@@ -253,24 +253,48 @@ function SpecimenArtwork({ styleName, gradId }) {
 export default function RoverSpecimenPhoto({ target, compact = false }) {
   const uid = useId().replace(/:/g, '');
   const gradId = `specimen-${uid}`;
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [target?.id]);
 
   if (!target) return null;
+
+  const photoSrc = `/images/samples/${target.id}.jpg`;
 
   return (
     <div
       className={`relative overflow-hidden rounded border border-sky-400/35 bg-black/80 ${
-        compact ? 'h-12 w-20 shrink-0' : 'w-full'
+        compact ? 'h-12 w-20 shrink-0' : 'aspect-[260/140] w-full'
       }`}
     >
+      {!imgFailed ? (
+        <img
+          src={photoSrc}
+          alt={target.name}
+          onError={() => setImgFailed(true)}
+          className="block h-full w-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <svg
+          viewBox="0 0 260 140"
+          className="block h-full w-full object-cover"
+          preserveAspectRatio="xMidYMid slice"
+          aria-label={target.name}
+        >
+          <SpecimenArtwork styleName={target.specimenStyle} gradId={gradId} />
+        </svg>
+      )}
+
+      {/* Subtle NASA Rover Optical Vignette & Fiducial Crosshair Overlay */}
       <svg
         viewBox="0 0 260 140"
-        className="block h-full w-full object-cover"
-        preserveAspectRatio="xMidYMid slice"
-        aria-label={target.name}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        preserveAspectRatio="none"
+        aria-hidden="true"
       >
-        <SpecimenArtwork styleName={target.specimenStyle} gradId={gradId} />
-
-        {/* Subtle NASA Rover Optical Vignette & Fiducial Crosshair Overlay */}
         <line x1="130" y1="58" x2="130" y2="82" stroke="#38bdf8" strokeWidth="0.9" opacity="0.55" />
         <line x1="118" y1="70" x2="142" y2="70" stroke="#38bdf8" strokeWidth="0.9" opacity="0.55" />
         {!compact && (
@@ -283,18 +307,10 @@ export default function RoverSpecimenPhoto({ target, compact = false }) {
         )}
       </svg>
 
-      {!compact ? (
-        <>
-          <div className="absolute top-1.5 left-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[8.5px] tracking-wider text-sky-300 backdrop-blur-xs">
-            ROVER MACRO IMAGERY
-          </div>
-          <div className="absolute right-2 bottom-1.5 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[8.5px] text-white/85">
-            <span className="inline-block h-0.5 w-4 bg-white/90" />
-            <span>10 mm</span>
-          </div>
-        </>
-      ) : (
-        <div className="absolute right-1 bottom-0.5 font-mono text-[7px] text-white/75">10mm</div>
+      {!compact && (
+        <div className="absolute top-1.5 left-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[8.5px] tracking-wider text-sky-300 backdrop-blur-xs">
+          NASA / JPL ROVER IMAGERY
+        </div>
       )}
     </div>
   );

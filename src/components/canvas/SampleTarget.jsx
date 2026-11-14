@@ -33,11 +33,11 @@ export default function SampleTarget({
   }, [target.position, siteProfile, terrainVersion]);
 
   const showFloatingLabel =
-    viewMode === 'EVA' && !wristMapOpen && (isHovered || isScanningThis);
+    viewMode === 'EVA' && !wristMapOpen;
 
   return (
     <group position={worldPos}>
-      {/* Generous Hover Hit-Sphere for Direct Hover-Only Interaction */}
+      {/* Generous Hit-Sphere for Target Focus & [E] / Click Scan */}
       <mesh
         position={[0, 0.9, 0]}
         onPointerOver={(e) => {
@@ -46,14 +46,18 @@ export default function SampleTarget({
           document.body.style.cursor = 'pointer';
           setActiveTarget(target.id);
           observeTarget(target.id);
-          if (!isCollected && !scanningState.active) {
-            startScan(target.id);
-          }
         }}
         onPointerOut={(e) => {
           e.stopPropagation();
           setIsHovered(false);
           document.body.style.cursor = 'auto';
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setActiveTarget(target.id);
+          if (!isCollected && !scanningState.active) {
+            startScan(target.id);
+          }
         }}
       >
         <sphereGeometry args={[1.45, 16, 16]} />
@@ -172,30 +176,26 @@ export default function SampleTarget({
         <pointLight position={[0, 1.1, 0]} color="#38bdf8" intensity={3.0} distance={5} />
       )}
 
-      {/* Clean Hover / Active-Scan Tooltip Directly Above Specimen */}
-      {showFloatingLabel && (
+      {/* Floating Question Mark / Active-Scan / Sampled Tooltip Above Specimen */}
+      {showFloatingLabel && (isHovered || isScanningThis || !isCollected) && (
         <Html position={[0, 1.45, 0]} center style={{ pointerEvents: 'none' }}>
-          <div
-            className={`whitespace-nowrap rounded border px-2.5 py-0.5 font-mono text-[10px] tracking-wider shadow-lg backdrop-blur-md transition-all ${
-              isCollected
-                ? 'border-emerald-400/50 bg-black/80 text-emerald-300'
-                : isScanningThis
-                ? 'border-yellow-400/80 bg-black/85 text-yellow-200'
-                : 'border-sky-300/70 bg-black/85 text-sky-100'
-            }`}
-          >
-            {isCollected ? (
-              <span>✓ {target.code} // SAMPLED ({target.name})</span>
-            ) : isScanningThis ? (
-              <span>
-                ⏳ {target.code} // SCANNING {Math.round(scanningState.progress)}%
-              </span>
-            ) : (
-              <span>
-                {target.code} · {target.name} · {target.massKg ?? 5.5}KG
-              </span>
-            )}
-          </div>
+          {isScanningThis ? (
+            <div className="whitespace-nowrap rounded border border-yellow-400/80 bg-black/85 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-yellow-200 shadow-lg backdrop-blur-md">
+              ⏳ {target.code} // SCANNING {Math.round(scanningState.progress)}%
+            </div>
+          ) : isCollected ? (
+            <div className="whitespace-nowrap rounded border border-emerald-400/50 bg-black/80 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-emerald-300 shadow-lg backdrop-blur-md">
+              ✓ {target.code} // SAMPLED ({target.name})
+            </div>
+          ) : isHovered ? (
+            <div className="whitespace-nowrap rounded border border-sky-300/70 bg-black/85 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-sky-100 shadow-lg backdrop-blur-md">
+              ? · {target.code} · [E] SCAN SAMPLE
+            </div>
+          ) : (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-amber-300/70 bg-slate-950/80 font-mono text-xs font-bold text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)] backdrop-blur-md">
+              ?
+            </div>
+          )}
         </Html>
       )}
     </group>

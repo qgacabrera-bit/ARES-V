@@ -209,23 +209,22 @@ export default function LanderBase({ site, terrainVersion }) {
         </mesh>
       ))}
 
-      {/* Front Airlock Extension Vestibule & Pressurized Hatch (-Z facing spawn [0,0]) — Hover-Interactable */}
+      {/* Front Airlock Extension Vestibule & Pressurized Hatch (-Z facing spawn [0,0]) */}
       <group
         position={[0, 1.56, -2.05]}
         onPointerOver={(e) => {
           e.stopPropagation();
           setAirlockHovered(true);
           document.body.style.cursor = 'pointer';
-          const now = performance.now();
-          if (now - hoverCooldownRef.current > 2000) {
-            hoverCooldownRef.current = now;
-            resupplyAndOffloadAtLander();
-          }
         }}
         onPointerOut={(e) => {
           e.stopPropagation();
           setAirlockHovered(false);
           document.body.style.cursor = 'auto';
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          resupplyAndOffloadAtLander();
         }}
       >
         {/* Vestibule Housing */}

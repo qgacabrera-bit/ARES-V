@@ -12,7 +12,7 @@ export default function SceneContainer() {
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ fov: 55, near: 0.1, far: 400, position: [0, 0.85, 5.25] }}
+        camera={{ fov: 55, near: 0.1, far: 400, position: [0, 1.44, 8.9] }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <Suspense fallback={null}>

@@ -7,7 +7,7 @@ import { useMissionStore } from '../../store/useMissionStore';
 import { latLonToVector3 } from '../../utils/terrainMath';
 import { createPlaceholderTexture, loadMarsWmtsTextures } from '../../utils/wmtsLoader';
 
-const GLOBE_RADIUS = 2.0;
+const GLOBE_RADIUS = 3.3895; // 1 unit = 1,000 km (Mars mean radius: 3,389.5 km)
 
 const STARFIELD_VERTEX_SHADER = /* glsl */ `
   attribute float aSize;
@@ -124,7 +124,7 @@ function RoverOrbitalTrackOverlay({ site, highlighted }) {
     const worldPts = rawPts.map(([lon, lat]) => {
       const pLat = site.lat + (lat - startLat) * amp;
       const pLon = site.lon + (lon - startLon) * amp;
-      const [vx, vy, vz] = latLonToVector3(pLat, pLon, GLOBE_RADIUS + 0.028);
+      const [vx, vy, vz] = latLonToVector3(pLat, pLon, GLOBE_RADIUS + 0.045);
       return new THREE.Vector3(vx, vy, vz);
     });
 
@@ -136,19 +136,19 @@ function RoverOrbitalTrackOverlay({ site, highlighted }) {
     });
     const coreLine = new THREE.Line(coreGeom, coreMat);
 
-    const hiPts = worldPts.map((v) => v.clone().normalize().multiplyScalar(GLOBE_RADIUS + 0.032));
+    const hiPts = worldPts.map((v) => v.clone().normalize().multiplyScalar(GLOBE_RADIUS + 0.052));
     const hiGeom = new THREE.BufferGeometry().setFromPoints(hiPts);
     const hiMat = new THREE.LineDashedMaterial({
       color: '#86efac',
-      dashSize: 0.022,
-      gapSize: 0.012,
+      dashSize: 0.036,
+      gapSize: 0.02,
       transparent: true,
       opacity: highlighted ? 0.96 : 0.45,
     });
     const hiLine = new THREE.Line(hiGeom, hiMat);
     hiLine.computeLineDistances();
 
-    const landingVec = worldPts[0].clone().normalize().multiplyScalar(GLOBE_RADIUS + 0.033);
+    const landingVec = worldPts[0].clone().normalize().multiplyScalar(GLOBE_RADIUS + 0.054);
     const quat = new THREE.Quaternion().setFromUnitVectors(
       new THREE.Vector3(0, 1, 0),
       landingVec.clone().normalize()
@@ -215,7 +215,7 @@ function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployP
   const lockRingRef = useRef();
   // Slightly above GLOBE_RADIUS + max displacement so pins sit cleanly over high terrain
   const pos = useMemo(
-    () => latLonToVector3(site.lat, site.lon, GLOBE_RADIUS + 0.025),
+    () => latLonToVector3(site.lat, site.lon, GLOBE_RADIUS + 0.042),
     [site.lat, site.lon]
   );
 
@@ -265,7 +265,7 @@ function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployP
   const rover = site.nasaRover;
 
   return (
-    <group position={pos} quaternion={quaternion}>
+    <group position={pos} quaternion={quaternion} scale={1.5}>
       {/* Generous invisible click/hover hit sphere */}
       <mesh
         renderOrder={2}
@@ -379,14 +379,14 @@ export default function OrbitGlobe() {
     active: false,
     elapsed: 0,
     startDir: new THREE.Vector3(0, 0, 1),
-    radius: 5.3,
+    radius: 8.9,
   });
 
   const deployAnimRef = useRef({
     elapsed: 0,
     completed: false,
     startDir: new THREE.Vector3(0, 0, 1),
-    startRadius: 5.3,
+    startRadius: 8.9,
     startTarget: new THREE.Vector3(0, 0, 0),
   });
 
@@ -400,7 +400,7 @@ export default function OrbitGlobe() {
   useEffect(() => {
     camera.rotation.order = 'XYZ';
     camera.up.set(0, 1, 0);
-    camera.position.set(0, 0.85, 5.25);
+    camera.position.set(0, 1.44, 8.9);
     camera.lookAt(0, 0, 0);
     if (controlsRef.current) {
       controlsRef.current.target.set(0, 0, 0);
@@ -415,7 +415,7 @@ export default function OrbitGlobe() {
       active: true,
       elapsed: 0,
       startDir: camera.position.clone().normalize(),
-      radius: Math.max(3.1, camera.position.length()),
+      radius: Math.max(5.25, camera.position.length()),
     };
   }, [selectedSiteId, isDeploying, camera]);
 
@@ -567,7 +567,7 @@ export default function OrbitGlobe() {
 
     if (globeGroupRef.current && activeSite) {
       globeGroupRef.current.updateMatrixWorld();
-      const [lx, ly, lz] = latLonToVector3(activeSite.lat, activeSite.lon, GLOBE_RADIUS + 0.025);
+      const [lx, ly, lz] = latLonToVector3(activeSite.lat, activeSite.lon, GLOBE_RADIUS + 0.042);
       tempWorldBeacon.set(lx, ly, lz).applyMatrix4(globeGroupRef.current.matrixWorld);
       tempWorldNormal.copy(tempWorldBeacon).normalize();
 
@@ -583,15 +583,15 @@ export default function OrbitGlobe() {
         tempQuat.slerpQuaternions(identQuat, qDelta, pAlign);
         tempCurDir.copy(anim.startDir).applyQuaternion(tempQuat).normalize();
 
-        // Continuous two-stage descent: orbital radius (~5.25) -> entry (3.2) -> beacon surface (2.055)
+        // Continuous two-stage descent: orbital radius (~8.9) -> entry (5.3895) -> beacon surface (3.4795)
         const rOrbitalToEntry = THREE.MathUtils.lerp(
           anim.startRadius,
-          3.2,
+          GLOBE_RADIUS + 2.0,
           smoothstep(0.0, 0.48, progress)
         );
         const radius = THREE.MathUtils.lerp(
           rOrbitalToEntry,
-          GLOBE_RADIUS + 0.055,
+          GLOBE_RADIUS + 0.09,
           smoothstep(0.35, 1.0, progress)
         );
 
@@ -657,10 +657,10 @@ export default function OrbitGlobe() {
             ref={marsMatRef}
             map={activeAlbedo}
             bumpMap={activeBump}
-            bumpScale={0.08}
+            bumpScale={0.12}
             displacementMap={activeBump}
-            displacementScale={0.03}
-            displacementBias={-0.015}
+            displacementScale={0.05}
+            displacementBias={-0.025}
             roughness={0.86}
             metalness={0.04}
             transparent={false}
@@ -714,8 +714,8 @@ export default function OrbitGlobe() {
         enablePan={false}
         enableDamping
         dampingFactor={0.06}
-        minDistance={3.1}
-        maxDistance={7.5}
+        minDistance={5.25}
+        maxDistance={12.7}
         rotateSpeed={0.55}
         zoomSpeed={0.8}
       />

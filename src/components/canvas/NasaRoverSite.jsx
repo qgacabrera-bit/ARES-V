@@ -119,13 +119,16 @@ export default function NasaRoverSite({ site, terrainVersion }) {
           e.stopPropagation();
           setRoverHovered(true);
           document.body.style.cursor = 'pointer';
-          discoverRover(site.id);
-          routeToUnexploredFrontier();
         }}
         onPointerOut={(e) => {
           e.stopPropagation();
           setRoverHovered(false);
           document.body.style.cursor = 'auto';
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          discoverRover(site.id);
+          routeToUnexploredFrontier();
         }}
       >
         {/* Ground tire tracks / dust disturbance */}

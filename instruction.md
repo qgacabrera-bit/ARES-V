@@ -1,29 +1,20 @@
-Refocus **ARES-V** (*Augmented Reconnaissance & EVA System – Visor*) to center the user experience around an **authentic NASA EVA Field Geology & Traverse Mapping Device ("ARES-V Field Slate")** held by the astronaut in first-person POV, directly fulfilling the NASA Space Apps challenge objective of providing a layered, NASA-data-driven surface exploration tool.
+Integrate a lightweight, diegetic mission narrative (**"ARES-1 // The Meridian Relay"**) into **ARES-V** so users feel immersed as a NASA field geologist without adding clutter or pop-up text walls. **Preserve all existing 3D scenes, shaders, terrain physics, and minimalist UI styling.**
 
-### 1. Replace Generic HUD Bars with the Interactive "ARES-V Field Slate" (`FieldSlateDevice.jsx`)
-- **Physical 3D Handheld / Forearm Device:** Render a ruggedized NASA-style EVA tablet/scanner held in the astronaut's left hand/forearm in the first-person viewport.
-  - **Peripheral Stowed View (Default):** Tilted cleanly in the lower-left corner showing the active Curiosity-style traverse route line, heading arrow, and next geologic waypoint distance.
-  - **Active Inspection View (`[M]` or Right-Click):** Smoothly brings the device into center-left focus and unlocks the cursor so the astronaut can click tabs, toggle NASA data layers, and inspect waypoints directly on the device's glass screen.
-- **3 Functional Tabs on the Device Screen (Minimalist, High-Signal UI):**
-  1. **`[MAP / ROUTE]` (JPL Mars Trek + USGS Geologic Mapping):**
-     - Displays a live 3D holographic/topographic map of the local site (highlighting **Mount Sharp Boxwork Formations** in Gale Crater and **Jezero Crater Delta**).
-     - Includes **4 toggleable NASA data layer switches** directly on the tablet bezel:
-       - `OPTICAL` (HiRISE / Mastcam surface mosaic)
-       - `TOPO / OBSTACLES` (HiRISE DEM contours + red hazard masks over boulder fields and >25° slopes)
-       - `USGS GEOLOGY` (Color-coded geologic units: mudstone, sulfate veins, boxwork ridges)
-       - `RAD / WEATHER` (Curiosity RAD ionizing radiation & dust opacity zones)
-     - **Annotated Curiosity-Style Traverse Route:** Draws a dashed cyan safe-route line from the Lander around large rock obstacles to each science station, accompanied by ground-projected AR waypoint markers in the 3D world.
-  2. **`[SPECTRA / REF]` (Perseverance Raw Gallery + Rover Reference):**
-     - When near a rock target, displays a compact **NASA Reference Verification Card** on the device showing the target's real NASA mission counterpart (e.g., *Curiosity Sol 4400+ Boxwork Ridge* or *Perseverance Cheyava Falls*), a real reference thumbnail from NASA's Mars Rover Raw Images Gallery, and key mineral/chemical signatures so the astronaut can confirm the sample before coring.
-  3. **`[EVA MOBILITY]` (Suit Safety & Return Calculator):**
-     - Shows real-time **Suit O₂**, **Core Temp (-63°C ambient)**, **Stamina**, and **Carried Sample Mass (`kg`)**, plus a dynamic **"Safe Return Margin"** indicator that recalculates whether the astronaut has enough oxygen and stamina to climb back to the Lander given their current pack weight.
+### 1. Diegetic Radio Comms Banner (`VisorHUD.jsx`)
+- Add a sleek, auto-dismissing **1-line Comms Ticker** directly beneath the top compass bar (`max-w-xl mx-auto px-4 py-1.5 rounded-full bg-slate-950/75 backdrop-blur-md border border-cyan-500/30 text-xs font-mono text-cyan-100`).
+- Trigger concise, contextual radio dispatches (fading out automatically after 6 seconds) based on real gameplay events:
+  - **Surface Deployment:** `"CAPCOM // Valkyrie touchdown confirmed. Raise Field Slate [M] to sync NASA rover telemetry and plot your route."`
+  - **First Sample Collected:** `"SCIENCE // Spectral match verified against NASA archive. Pack mass updated—monitor stamina on >15° slopes."`
+  - **High Encumbrance (`>= 2` carried cores) or Low O₂ (`< 30%`):** `"FLIGHT // Metabolic O₂ burn elevated. Return to Lander airlock to offload cores and replenish reserves."`
+  - **All Site Cores Vaulted:** `"CAPCOM // Priority cores secured in ascent vault. Dust front approaching—cleared for orbital return."`
 
-### 2. Clean Up the Outer Visor Viewport
-- Remove any cluttered floating text boxes from the main screen. Keep only:
-  - Top-left micro-watermark: `ARES-V // EVA FIELD SYSTEM`
-  - Top-center slim compass with `LANDER` bearing and active `WAYPOINT` bearing
-  - Center subtle reticle that shifts to `[E] SCAN TARGET` or `[E] OFFLOAD & RESUPPLY AT LANDER` only when within 4 meters of an interactive object
-  - Bottom single-line minimalist hotkey bar (`[M] FIELD SLATE` · `[1-4] DATA LAYERS` · `[R] RADAR PULSE` · `[E] INTERACT`)
+### 2. Mission Chapter Briefings (`landingZones.js` & Pre-Deployment Card)
+- Update each site's `1-sentence` mission brief in `landingZones.js` to connect real NASA rover history to the astronaut's current objective:
+  - **Jezero Crater:** `"Follow Perseverance's delta traverse upslope to core ancient carbonate-mudstone strata before seasonal dust opacity spikes."`
+  - **Mount Sharp:** `"Ascend Curiosity's Aeolis Mons corridor to sample hardened boxwork mineral veins formed by Mars's last groundwater."`
+  - **Meridiani Planum:** `"Survey Opportunity's hematite-rich plains and crater rims to map ancient acidic surface water horizons."`
+  - **Gusev Crater:** `"Traverse Spirit's Columbia Hills ridge to recover hydrothermal opaline silica deposits."`
+- Include a compact 2-sentence **"Discovery Note"** on each sample target that unlocks in the `SPECTRA / REF` tab once vaulted.
 
-### 3. Preserve Realistic Lander & Encumbrance Mechanics
-- Keep the Mars Lander at spawn with finite O₂/power reserves, sample offloading (`0 kg` reset), and realistic uphill stamina/oxygen penalties as sample weight increases.
+### 3. Opening Mission Context in `ABOUT` Modal
+- Add a concise 3-line **"MISSION BRIEF // SOL 412"** block at the top of the `ABOUT` modal framing the user as the Lead Field Geologist aboard *Lander Valkyrie*, bridging orbital NASA datasets with human field intuition.

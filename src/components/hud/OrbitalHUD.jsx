@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Flame, Globe, Maximize2, Rocket, Snowflake, X } from 'lucide-react';
+import { AlertTriangle, Flame, Globe, Rocket, Snowflake, X } from 'lucide-react';
 import { LANDING_ZONES, LANDING_ZONES_BY_ID, ORBITAL_LAYERS } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import { fetchLiveRoverTraverse, getMarsAlbedoCrop } from '../../utils/roverPathLoader';
@@ -10,9 +10,31 @@ const LAYER_ICONS = {
   ICE: Snowflake,
 };
 
+const SITE_BRIEFING_META = {
+  jezero: {
+    roverTag: 'M2020 Perseverance',
+    coords: '18.44°N, 77.45°E',
+    terrain: '29° Delta Scarps',
+  },
+  gale: {
+    roverTag: 'MSL Curiosity',
+    coords: '4.59°S, 137.44°E',
+    terrain: '28° Slope Ridges',
+  },
+  meridiani: {
+    roverTag: 'MER-B Opportunity',
+    coords: '1.95°S, 354.47°E',
+    terrain: '24° Crater Slopes',
+  },
+  gusev: {
+    roverTag: 'MER-A Spirit',
+    coords: '14.57°S, 175.47°E',
+    terrain: '25° Talus Slopes',
+  },
+};
+
 export default function OrbitalHUD() {
   const orbitalLayer = useMissionStore((s) => s.orbitalLayer);
-  const orbitalDataSource = useMissionStore((s) => s.orbitalDataSource);
   const selectedSiteId = useMissionStore((s) => s.selectedSiteId);
   const isDeploying = useMissionStore((s) => s.isDeploying);
   const deployProgress = useMissionStore((s) => s.deployProgress);
@@ -27,15 +49,16 @@ export default function OrbitalHUD() {
   const selectedSite = selectedSiteId ? LANDING_ZONES_BY_ID[selectedSiteId] : null;
   const activeLayerObj = ORBITAL_LAYERS.find((l) => l.id === orbitalLayer);
   const siteSamplesCount = selectedSite ? (vaultedSamples[selectedSite.id] || []).length : 0;
+  const siteMeta = selectedSite
+    ? SITE_BRIEFING_META[selectedSite.id] || {
+        roverTag: selectedSite.nasaRover?.shortName || selectedSite.shortName,
+        coords: selectedSite.coordinates,
+        terrain: selectedSite.hazard,
+      }
+    : null;
 
   const [liveGeoJson, setLiveGeoJson] = useState(null);
-  const [orbitalMapEnlarged, setOrbitalMapEnlarged] = useState(false);
-
-  useEffect(() => {
-    if (isDeploying || !selectedSiteId) {
-      setOrbitalMapEnlarged(false);
-    }
-  }, [isDeploying, selectedSiteId]);
+  const [activeModal, setActiveModal] = useState(null); // null | 'ABOUT' | 'HOW_TO' | 'TEAM'
 
   useEffect(() => {
     if (!selectedSite?.id) {
@@ -53,8 +76,8 @@ export default function OrbitalHUD() {
 
   const roverPreview = useMemo(() => {
     if (!selectedSite) return null;
-    const W = 360;
-    const H = 180;
+    const W = 440;
+    const H = 160;
     const crop = getMarsAlbedoCrop(
       selectedSite.lat,
       selectedSite.lon,
@@ -88,8 +111,8 @@ export default function OrbitalHUD() {
       const dLon = Math.max(0.01, maxLon - minLon);
       const dLat = Math.max(0.01, maxLat - minLat);
       projected = geoPts.map(([lon, lat]) => {
-        const x = 42 + ((lon - minLon) / dLon) * (W - 84);
-        const y = H - 28 - ((lat - minLat) / dLat) * (H - 56);
+        const x = 48 + ((lon - minLon) / dLon) * (W - 96);
+        const y = H - 24 - ((lat - minLat) / dLat) * (H - 48);
         return [Number(x.toFixed(1)), Number(y.toFixed(1))];
       });
     }
@@ -123,8 +146,6 @@ export default function OrbitalHUD() {
       landingSvg: projected[0] || [W * 0.25, H * 0.55],
       roverSvg: projected[projected.length - 1] || [W * 0.75, H * 0.45],
       milestoneNodes,
-      isLive: liveGeoJson?.status === 'LIVE',
-      latestSol: liveGeoJson?.latestSol || selectedSite.nasaRover?.latestSol,
     };
   }, [selectedSite, liveGeoJson]);
 
@@ -133,47 +154,74 @@ export default function OrbitalHUD() {
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 sm:p-5">
       {/* Top Bar */}
-      <div className="flex items-start justify-between gap-4">
-        {/* Top-Left Watermark & Sleek Header */}
-        <div className="space-y-0.5">
-          <div className="font-mono text-[11px] tracking-[0.2em] text-white/70">
-            ARES-V // ORBITAL RECON
-          </div>
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-sm font-semibold tracking-wide text-white/95">ARES-V</h1>
-            <span className="hidden text-[11px] text-white/50 sm:inline">
-              Augmented Reconnaissance &amp; EVA System – Visor
-            </span>
-          </div>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+        <div className="justify-self-start font-mono text-[11px] tracking-[0.2em] text-white/70">
+          ARES-V // ORBITAL RECON
         </div>
 
-        {/* Center Emergency Abort Notice if triggered by 0% O2 */}
-        {abortNotice && !isDeploying && (
-          <div className="pointer-events-auto flex items-center gap-2 rounded border border-red-400/55 bg-red-950/75 px-3 py-1 font-mono text-[10px] tracking-wider text-red-100 shadow-lg backdrop-blur-md">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-300" />
-            <span>{abortNotice}</span>
-            <button
-              type="button"
-              onClick={clearAbortNotice}
-              aria-label="Dismiss emergency notice"
-              className="rounded p-0.5 text-red-200/70 hover:bg-red-500/25 hover:text-white"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
+        {/* Center Top Navigation Pill Bar */}
+        {!isDeploying ? (
+          <nav
+            aria-label="Orbital Navigation"
+            className="pointer-events-auto flex items-center justify-self-center gap-1 rounded-full border border-white/15 bg-slate-950/75 px-2 py-1 backdrop-blur-md"
+          >
+            {[
+              { id: null, label: 'ORBITAL MAP' },
+              { id: 'ABOUT', label: 'ABOUT' },
+              { id: 'HOW_TO', label: 'HOW TO' },
+              { id: 'TEAM', label: 'TEAM' },
+            ].map((item) => {
+              const isActive = activeModal === item.id;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    setActiveModal(item.id);
+                    if (item.id !== null && selectedSiteId) selectSite(null);
+                  }}
+                  className={`rounded-full px-3 py-1 font-mono text-[10px] tracking-[0.14em] transition ${
+                    isActive
+                      ? 'bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-400/50'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+        ) : (
+          <div />
         )}
 
-        {/* Top-Right Minimal Telemetry Micro-Badge */}
-        <div className="rounded border border-white/15 bg-black/40 px-2.5 py-1 font-mono text-[11px] tracking-wider text-white/75 backdrop-blur-md">
+        {/* Top-Right Minimal Telemetry & Scale Micro-Badge */}
+        <div className="justify-self-end rounded border border-white/15 bg-black/40 px-2.5 py-1 font-mono text-[11px] tracking-wider text-white/75 backdrop-blur-md">
           {isDeploying && selectedSite
-            ? `EDL DESCENT · ${selectedSite.shortName}`
-            : 'MRO / ODYSSEY RELAY · ALT 380 KM'}
+            ? `EDL DESCENT · ${selectedSite.shortName} · 1 UNIT = 1,000 KM`
+            : '1 UNIT = 1,000 KM · MRO RELAY · ALT 380 KM'}
         </div>
       </div>
 
-      {/* Actual NASA Rover Pinpoints Quick Selector Bar */}
+      {/* Center Emergency Abort Notice if triggered by 0% O2 */}
+      {abortNotice && !isDeploying && (
+        <div className="pointer-events-auto mx-auto mt-2 flex items-center gap-2 rounded border border-red-400/55 bg-red-950/75 px-3 py-1 font-mono text-[10px] tracking-wider text-red-100 shadow-lg backdrop-blur-md">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-300" />
+          <span>{abortNotice}</span>
+          <button
+            type="button"
+            onClick={clearAbortNotice}
+            aria-label="Dismiss emergency notice"
+            className="rounded p-0.5 text-red-200/70 hover:bg-red-500/25 hover:text-white"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Compact Left-Side Landing Site Quick Selector Rail */}
       {!isDeploying && (
-        <div className="pointer-events-auto mx-auto mt-1 flex flex-wrap items-center justify-center gap-1.5">
+        <div className="pointer-events-auto fixed top-1/2 left-6 z-10 flex w-56 -translate-y-1/2 flex-col gap-2">
           {LANDING_ZONES.map((zone) => {
             const rv = zone.nasaRover;
             const active = selectedSiteId === zone.id;
@@ -183,20 +231,28 @@ export default function OrbitalHUD() {
                 type="button"
                 onMouseEnter={() => setHoveredSite(zone.id)}
                 onMouseLeave={() => setHoveredSite(null)}
-                onClick={() => selectSite(zone.id)}
-                className={`rounded-md border px-2.5 py-1 text-left font-mono text-[10px] tracking-wider backdrop-blur-md transition ${
+                onClick={() => {
+                  setActiveModal(null);
+                  selectSite(zone.id);
+                }}
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left backdrop-blur-md transition ${
                   active
-                    ? 'border-sky-400/80 bg-sky-500/25 text-white shadow-[0_0_14px_rgba(56,189,248,0.3)]'
-                    : 'border-white/15 bg-black/55 text-white/75 hover:border-amber-300/60 hover:bg-black/75 hover:text-white'
+                    ? 'border-cyan-400/75 bg-slate-950/85 text-white shadow-[0_0_16px_rgba(34,211,238,0.22)]'
+                    : 'border-white/15 bg-slate-950/65 text-white/80 hover:border-amber-300/60 hover:bg-slate-950/85 hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <span className={active ? 'text-sky-300' : 'text-amber-300'}>●</span>
-                  <span>{rv?.shortName || zone.shortName}</span>
-                  <span className="text-[8.5px] text-white/45">({rv?.code})</span>
-                </div>
-                <div className="text-[8.5px] text-white/55">
-                  {zone.name} · {rv?.totalOdometryKm} KM
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    active
+                      ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]'
+                      : 'bg-amber-400 shadow-[0_0_6px_#fbbf24]'
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-semibold text-white">{zone.name}</div>
+                  <div className="truncate font-mono text-[10px] text-slate-400">
+                    {rv?.shortName || zone.shortName} · {rv?.totalOdometryKm} km
+                  </div>
                 </div>
               </button>
             );
@@ -204,9 +260,9 @@ export default function OrbitalHUD() {
         </div>
       )}
 
-      {/* Middle Area: Center EDL Lock Reticle during Dive OR Enlarged Actual Rover Briefing Card */}
+      {/* Middle Area: Center EDL Lock Reticle during Dive */}
       <div className="flex flex-1 items-center justify-center">
-        {isDeploying && selectedSite ? (
+        {isDeploying && selectedSite && (
           <div className="flex flex-col items-center gap-3">
             {/* Minimal Lock-On Reticle Brackets */}
             <div className="relative flex h-16 w-16 items-center justify-center">
@@ -220,252 +276,225 @@ export default function OrbitalHUD() {
               EDL DESCENT LOCK // ALT: {descentAltKm} KM
             </div>
           </div>
-        ) : (
-          selectedSite && (
-            <div className="pointer-events-auto ml-auto mr-0 w-full max-w-md rounded-xl border border-white/20 bg-black/70 p-4 shadow-2xl backdrop-blur-md sm:mr-2">
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-widest text-sky-400">
-                    <span>{selectedSite.nasaRover?.code}</span>
-                    <span className="text-white/40">//</span>
-                    <span>{selectedSite.coordinates}</span>
-                  </div>
-                  <h2 className="text-base font-semibold text-white">
-                    {selectedSite.nasaRover?.name || selectedSite.name}
-                  </h2>
-                  <p className="text-[11px] text-cyan-200/80">
-                    {selectedSite.name} — {selectedSite.subtitle}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => selectSite(null)}
-                  aria-label="Close site briefing"
-                  className="rounded p-1 text-white/50 transition hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {selectedSite.nasaRover && (
-                <div className="mb-2.5 grid grid-cols-2 gap-1.5 rounded border border-white/10 bg-slate-900/75 p-2 font-mono text-[9.5px]">
-                  <div>
-                    <span className="text-white/50">STATUS:</span>{' '}
-                    <span className="text-emerald-300">{selectedSite.nasaRover.status}</span>
-                  </div>
-                  <div>
-                    <span className="text-white/50">TRAVERSE:</span>{' '}
-                    <span className="text-green-300">{selectedSite.nasaRover.totalOdometryKm} KM</span>
-                  </div>
-                  <div className="col-span-2 truncate">
-                    <span className="text-white/50">SOL 0 SITE:</span>{' '}
-                    <span className="text-yellow-300">{selectedSite.nasaRover.landingName}</span>
-                  </div>
-                  {selectedSite.marsTrekBookmark && (
-                    <div className="col-span-2 rounded border border-cyan-400/20 bg-black/45 px-1.5 py-1 text-[8.5px] leading-tight text-cyan-200/90">
-                      <div>
-                        <span className="text-white/50">ITEM TYPE:</span> {selectedSite.marsTrekBookmark.itemType} ·{' '}
-                        <span className="text-white/90">{selectedSite.marsTrekBookmark.name}</span>
-                      </div>
-                      <div className="mt-0.5 break-all text-white/70">
-                        <span className="text-white/50">EXTENT:</span>{' '}
-                        {selectedSite.marsTrekBookmark.extent.join(', ')}
-                      </div>
-                    </div>
-                  )}
-                  <div className="col-span-2 text-white/70">
-                    <span className="text-white/50">INSTRUMENTS:</span>{' '}
-                    {selectedSite.nasaRover.instruments}
-                  </div>
-                </div>
-              )}
-
-              <p className="mb-2.5 text-xs leading-relaxed text-white/85">
-                {selectedSite.nasaRover?.keyDiscoveries || selectedSite.objective}
-              </p>
-
-              <div className="mb-2.5 flex items-center gap-1.5 rounded border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200/90">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                <span className="truncate">{selectedSite.hazard}</span>
-              </div>
-
-              <div className="mb-2.5 flex items-center justify-between font-mono text-[10px] text-white/60">
-                <span>BASE RAD: {selectedSite.baseRadiation} mSv/d</span>
-                <span>VAULTED: {siteSamplesCount}/{selectedSite.targets.length}</span>
-              </div>
-
-              {/* Enlarged NASA Mars Trek Albedo & Actual Rover Landing (Yellow) + Path (Green Highlight) Preview */}
-              {roverPreview && selectedSite.nasaRover && (
-                <div className="mb-3 overflow-hidden rounded-lg border border-cyan-400/30 bg-slate-950/90">
-                  <div className="flex items-center justify-between border-b border-white/10 bg-black/70 px-2.5 py-1.5 font-mono text-[9px]">
-                    <span className="text-sky-300">TREK.NASA.GOV // MARS_ALBEDO.JPG</span>
-                    <div className="flex items-center gap-2">
-                      <span className={roverPreview.isLive ? 'text-emerald-300' : 'text-amber-300'}>
-                        {roverPreview.isLive ? 'LIVE GEOJSON' : 'NASA CACHED'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setOrbitalMapEnlarged(true)}
-                        className="flex items-center gap-1 rounded border border-cyan-400/50 bg-cyan-500/20 px-1.5 py-0.5 text-[8.5px] font-semibold text-cyan-200 transition hover:bg-cyan-500/35"
-                      >
-                        <Maximize2 className="h-2.5 w-2.5" />
-                        <span>ENLARGE MAP</span>
-                      </button>
-                    </div>
-                  </div>
-                  <svg viewBox={`0 0 ${roverPreview.W} ${roverPreview.H}`} className="block h-48 w-full sm:h-52">
-                    <image
-                      href="/textures/mars_albedo.jpg"
-                      x={roverPreview.imgX}
-                      y={roverPreview.imgY}
-                      width={roverPreview.imgW}
-                      height={roverPreview.imgH}
-                      preserveAspectRatio="none"
-                      opacity="0.86"
-                    />
-                    <rect width={roverPreview.W} height={roverPreview.H} fill="#020617" opacity="0.34" />
-                    {roverPreview.pointsAttr && (
-                      <>
-                        <polyline
-                          points={roverPreview.pointsAttr}
-                          fill="none"
-                          stroke="#4ade80"
-                          strokeWidth="7"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          opacity="0.38"
-                        />
-                        <polyline
-                          points={roverPreview.pointsAttr}
-                          fill="none"
-                          stroke="#22c55e"
-                          strokeWidth="2.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          opacity="0.98"
-                        />
-                        <polyline
-                          points={roverPreview.pointsAttr}
-                          fill="none"
-                          stroke="#bbf7d0"
-                          strokeWidth="1.3"
-                          strokeDasharray="4 5"
-                          className="animate-pulse"
-                        />
-                      </>
-                    )}
-                    {/* Route Milestone Nodes along Green Path */}
-                    {roverPreview.milestoneNodes.slice(1).map((m) => (
-                      <g key={m.id}>
-                        <circle
-                          cx={m.svg[0]}
-                          cy={m.svg[1]}
-                          r="3.2"
-                          fill="#86efac"
-                          stroke="#022c22"
-                          strokeWidth="0.9"
-                        />
-                      </g>
-                    ))}
-                    {/* Yellow Rover Sol 0 Touchdown */}
-                    <circle
-                      cx={roverPreview.landingSvg[0]}
-                      cy={roverPreview.landingSvg[1]}
-                      r="8"
-                      fill="rgba(250, 204, 21, 0.25)"
-                      stroke="#fde047"
-                      strokeWidth="1.2"
-                      className="animate-pulse"
-                    />
-                    <polygon
-                      points={`${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] - 5} ${roverPreview.landingSvg[0] + 5},${roverPreview.landingSvg[1]} ${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] + 5} ${roverPreview.landingSvg[0] - 5},${roverPreview.landingSvg[1]}`}
-                      fill="#facc15"
-                      stroke="#020617"
-                      strokeWidth="0.8"
-                    />
-                    <text
-                      x={roverPreview.landingSvg[0] + 8}
-                      y={roverPreview.landingSvg[1] - 5}
-                      fill="#fef08a"
-                      fontSize="8.5"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                    >
-                      ★ SOL 0 LANDING
-                    </text>
-                    {/* Current Rover End Position */}
-                    <circle
-                      cx={roverPreview.roverSvg[0]}
-                      cy={roverPreview.roverSvg[1]}
-                      r="4.5"
-                      fill="#22c55e"
-                      stroke="#ecfdf5"
-                      strokeWidth="1.2"
-                    />
-                    <text
-                      x={roverPreview.roverSvg[0] - 6}
-                      y={roverPreview.roverSvg[1] - 8}
-                      textAnchor="end"
-                      fill="#86efac"
-                      fontSize="8.5"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                    >
-                      {selectedSite.nasaRover.shortName}
-                    </text>
-                  </svg>
-                  <div className="flex items-center justify-between border-t border-white/10 bg-black/75 px-2.5 py-1 font-mono text-[8.5px]">
-                    <span className="truncate text-yellow-200/90">
-                      {selectedSite.nasaRover.landingCoordinates}
-                    </span>
-                    <span className="shrink-0 pl-2 text-green-300">
-                      ODO: {selectedSite.nasaRover.totalOdometryKm} KM · SOL {roverPreview.latestSol}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => deployToSurface(selectedSite.id)}
-                className="flex w-full items-center justify-center gap-2 rounded border border-sky-400/40 bg-sky-500/20 px-3 py-2 font-mono text-xs font-medium tracking-wider text-sky-100 transition hover:border-sky-300/70 hover:bg-sky-500/35 active:scale-[0.99]"
-              >
-                <Rocket className="h-3.5 w-3.5 text-sky-300" />
-                DEPLOY TO {selectedSite.nasaRover?.shortName || selectedSite.shortName} SITE
-              </button>
-            </div>
-          )
         )}
       </div>
 
-      {/* Centered Enlarged Orbital Mars Trek & Rover Modal */}
-      {orbitalMapEnlarged && selectedSite && roverPreview && selectedSite.nasaRover && (
-        <div className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
-          <div className="flex max-h-[94vh] w-[95vw] max-w-6xl flex-col overflow-y-auto rounded-xl border border-cyan-400/45 bg-slate-950/95 p-4 font-mono shadow-[0_0_60px_rgba(14,165,233,0.35)]">
-            <div className="mb-3 flex items-center justify-between border-b border-white/15 pb-2.5">
+      {/* Centered ABOUT / HOW TO / TEAM Modals */}
+      {!isDeploying && activeModal && (
+        <div
+          onClick={() => setActiveModal(null)}
+          className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-black/45 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-2xl border border-white/15 bg-slate-950/90 p-6 font-sans text-white shadow-2xl backdrop-blur-xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-3">
               <div>
-                <div className="text-xs font-bold tracking-[0.18em] text-cyan-300">
-                  {selectedSite.nasaRover.name} ({selectedSite.nasaRover.code}) — MARS TREK TRAVERSE
+                <div className="font-mono text-[10px] tracking-[0.2em] text-cyan-300">
+                  ARES-V // {activeModal === 'HOW_TO' ? 'MISSION GUIDE' : activeModal}
                 </div>
-                <div className="text-[10px] text-amber-200/85">
-                  {selectedSite.name} ({selectedSite.coordinates}) · {selectedSite.nasaRover.landingName}
+                <h2 className="mt-0.5 text-lg font-semibold tracking-tight text-white">
+                  {activeModal === 'ABOUT' && 'Augmented Reconnaissance & EVA System'}
+                  {activeModal === 'HOW_TO' && 'Controls & Mission Loop'}
+                  {activeModal === 'TEAM' && 'Avengineers'}
+                </h2>
+                {activeModal === 'TEAM' && (
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Technological Institute of the Philippines – Quezon City · Computer Engineering
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                aria-label="Close modal"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {activeModal === 'ABOUT' && (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/10 p-3.5">
+                  <div className="mb-1.5 font-mono text-[10px] tracking-[0.18em] text-cyan-300">
+                    MISSION BRIEF // SOL 412 · ARES-1
+                  </div>
+                  <p className="text-xs leading-relaxed text-cyan-50/90">
+                    Deployed as Lead Field Geologist aboard <em>Lander Valkyrie</em>, you operate the{' '}
+                    <strong className="text-white">ARES-V Visor</strong> to bridge orbital NASA datasets
+                    with human field intuition, recovering priority cores along historic rover corridors
+                    before the seasonal dust front closes the launch window.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                    <div className="mb-1.5 font-mono text-[10px] tracking-wider text-cyan-300">
+                      ORBITAL TELEMETRY
+                    </div>
+                    <p className="text-xs leading-relaxed text-slate-300">
+                      Planetary-scale reconnaissance powered by <strong className="text-white">JPL Mars Trek WMTS</strong>,{' '}
+                      <strong className="text-white">MOLA</strong> elevation,{' '}
+                      <strong className="text-white">THEMIS</strong> thermal, and{' '}
+                      <strong className="text-white">SHARAD</strong> subsurface ice layers.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                    <div className="mb-1.5 font-mono text-[10px] tracking-wider text-cyan-300">
+                      SURFACE EVA
+                    </div>
+                    <p className="text-xs leading-relaxed text-slate-300">
+                      First-person terrain navigation along authentic NASA rover traverses with
+                      field-slate pathfinding and live spectral specimen verification.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeModal === 'HOW_TO' && (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                    <div className="mb-2 font-mono text-[10px] tracking-wider text-cyan-300">
+                      ORBITAL RECON
+                    </div>
+                    <ul className="space-y-1.5 text-xs text-slate-300">
+                      <li><span className="font-mono text-white">Drag</span> — Rotate Mars globe</li>
+                      <li><span className="font-mono text-white">Scroll</span> — Zoom altitude</li>
+                      <li><span className="font-mono text-white">1–3</span> — Switch orbital layers</li>
+                      <li><span className="font-mono text-white">Click Beacon</span> — Inspect &amp; deploy</li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                    <div className="mb-2 font-mono text-[10px] tracking-wider text-cyan-300">
+                      SURFACE EVA
+                    </div>
+                    <ul className="space-y-1.5 text-xs text-slate-300">
+                      <li><span className="font-mono text-white">WASD / Shift</span> — Move &amp; sprint</li>
+                      <li><span className="font-mono text-white">M / Tab</span> — Raise Field Slate</li>
+                      <li><span className="font-mono text-white">1–4</span> — NASA data layers</li>
+                      <li><span className="font-mono text-white">R</span> — Subsurface radar pulse</li>
+                      <li><span className="font-mono text-white">E</span> — Scan core / Resupply</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-200">
+                  Tip: Offload heavy rock cores at the Lander airlock (<span className="font-mono font-semibold">[E]</span>) to restore stamina and O₂ reserves.
+                </div>
+              </div>
+            )}
+
+            {activeModal === 'TEAM' && (
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    '3D Orbital & Terrain Architecture',
+                    'NASA Data Pipeline & Shaders',
+                    'EVA Systems & Visor UX',
+                  ].map((role) => (
+                    <span
+                      key={role}
+                      className="rounded-full border border-cyan-300/25 bg-cyan-500/10 px-2.5 py-1 font-mono text-[10px] text-cyan-200"
+                    >
+                      {role}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="space-y-1.5 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-slate-300">
+                  <div className="font-mono text-[10px] tracking-wider text-slate-400">
+                    CREW ROSTER
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-white/90">
+                    <span>• Gabriel Cabrera</span>
+                    <span>• Ron Von Angeles</span>
+                    <span>• Angelo Base</span>
+                    <span>• Christian Bondoc</span>
+                    <span>• Jomari Iglesia</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Centered Pre-Deployment Briefing Modal */}
+      {!isDeploying && selectedSite && (
+        <div
+          onClick={() => selectSite(null)}
+          className="pointer-events-auto fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-white/15 bg-slate-950/85 p-6 font-sans text-white shadow-2xl backdrop-blur-xl"
+          >
+            {/* 1. Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 space-y-1">
+                <h2 className="text-lg font-semibold tracking-tight text-white">
+                  {selectedSite.name}
+                </h2>
+                <div className="font-mono text-[11px] tracking-wide text-cyan-200/80">
+                  {siteMeta.roverTag} · {siteMeta.coords}
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setOrbitalMapEnlarged(false)}
-                className="flex items-center gap-1 rounded border border-white/20 bg-black/50 px-2.5 py-1 text-[10px] text-white/85 hover:border-cyan-400/50 hover:text-white"
+                onClick={() => selectSite(null)}
+                aria-label="Close site briefing"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
               >
-                <X className="h-3.5 w-3.5" />
-                <span>CLOSE MAP</span>
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
-              <div className="overflow-hidden rounded-lg border border-cyan-400/35 bg-black">
+            {/* 2. 1-Sentence Mission Goal */}
+            <p className="line-clamp-2 text-sm leading-relaxed text-slate-300">
+              {selectedSite.objective}
+            </p>
+
+            {/* 3. Compact 3-Column Spec Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                  TERRAIN
+                </div>
+                <div className="mt-1 truncate text-sm font-semibold text-white">
+                  {siteMeta.terrain}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                  RADIATION
+                </div>
+                <div className="mt-1 text-sm font-semibold text-white">
+                  {selectedSite.baseRadiation} mSv/d
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                  OBJECTIVES
+                </div>
+                <div className="mt-1 text-sm font-semibold text-white">
+                  {siteSamplesCount} / {selectedSite.targets.length} Samples
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Compact Interactive Route Preview */}
+            {roverPreview && selectedSite.nasaRover && (
+              <div className="h-40 overflow-hidden rounded-xl border border-white/10 bg-slate-950">
                 <svg
                   viewBox={`0 0 ${roverPreview.W} ${roverPreview.H}`}
-                  className="block h-[56vh] min-h-[380px] max-h-[640px] w-full"
+                  preserveAspectRatio="xMidYMid slice"
+                  className="block h-full w-full"
                 >
                   <image
                     href="/textures/mars_albedo.jpg"
@@ -476,149 +505,77 @@ export default function OrbitalHUD() {
                     preserveAspectRatio="none"
                     opacity="0.88"
                   />
-                  <rect width={roverPreview.W} height={roverPreview.H} fill="#020617" opacity="0.3" />
+                  <rect width={roverPreview.W} height={roverPreview.H} fill="#020617" opacity="0.28" />
                   {roverPreview.pointsAttr && (
                     <>
                       <polyline
                         points={roverPreview.pointsAttr}
                         fill="none"
                         stroke="#4ade80"
-                        strokeWidth="8"
+                        strokeWidth="6"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        opacity="0.38"
+                        opacity="0.32"
                       />
                       <polyline
                         points={roverPreview.pointsAttr}
                         fill="none"
                         stroke="#22c55e"
-                        strokeWidth="3.2"
+                        strokeWidth="2.4"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        opacity="0.98"
-                      />
-                      <polyline
-                        points={roverPreview.pointsAttr}
-                        fill="none"
-                        stroke="#bbf7d0"
-                        strokeWidth="1.5"
-                        strokeDasharray="4 5"
-                        className="animate-pulse"
+                        opacity="0.96"
                       />
                     </>
                   )}
-                  {roverPreview.milestoneNodes.map((m, idx) => (
-                    <g key={m.id}>
-                      <circle
-                        cx={m.svg[0]}
-                        cy={m.svg[1]}
-                        r="3.8"
-                        fill={idx === 0 ? '#facc15' : '#86efac'}
-                        stroke="#020617"
-                        strokeWidth="1"
-                      />
-                      <text
-                        x={m.svg[0] + 5}
-                        y={m.svg[1] + (idx % 2 === 0 ? -5 : 9)}
-                        fill="#e2e8f0"
-                        fontSize="7"
-                        fontWeight="bold"
-                      >
-                        {m.sol}: {m.name}
-                      </text>
-                    </g>
+                  {roverPreview.milestoneNodes.slice(1, -1).map((m) => (
+                    <circle
+                      key={m.id}
+                      cx={m.svg[0]}
+                      cy={m.svg[1]}
+                      r="2.8"
+                      fill="#86efac"
+                      stroke="#022c22"
+                      strokeWidth="0.9"
+                    />
                   ))}
+                  {/* Sol 0 Touchdown Pin */}
                   <circle
                     cx={roverPreview.landingSvg[0]}
                     cy={roverPreview.landingSvg[1]}
-                    r="9"
-                    fill="rgba(250, 204, 21, 0.24)"
+                    r="6.5"
+                    fill="rgba(250, 204, 21, 0.22)"
                     stroke="#fde047"
-                    strokeWidth="1.4"
-                    className="animate-pulse"
+                    strokeWidth="1.2"
                   />
+                  <polygon
+                    points={`${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] - 4.2} ${roverPreview.landingSvg[0] + 4.2},${roverPreview.landingSvg[1]} ${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] + 4.2} ${roverPreview.landingSvg[0] - 4.2},${roverPreview.landingSvg[1]}`}
+                    fill="#facc15"
+                    stroke="#020617"
+                    strokeWidth="0.8"
+                  />
+                  {/* Current Rover Pin */}
                   <circle
                     cx={roverPreview.roverSvg[0]}
                     cy={roverPreview.roverSvg[1]}
-                    r="5"
+                    r="4.5"
                     fill="#22d3ee"
                     stroke="#020617"
                     strokeWidth="1.2"
                   />
                 </svg>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-black/85 px-3 py-1.5 text-[9.5px]">
-                  <span className="text-yellow-300">
-                    ★ YELLOW: {selectedSite.nasaRover.landingName} ({selectedSite.nasaRover.landingDate})
-                  </span>
-                  <span className="text-green-400">
-                    ━ GREEN: {selectedSite.nasaRover.totalOdometryKm} KM · SOL {roverPreview.latestSol}
-                  </span>
-                </div>
               </div>
+            )}
 
-              <div className="flex max-h-[60vh] flex-col gap-2.5 overflow-y-auto">
-                <div className="rounded-lg border border-white/15 bg-black/65 p-3 text-[10px]">
-                  <div className="font-bold text-cyan-300">ACTUAL ROVER REFERENCE DOSSIER</div>
-                  <div className="mt-1 text-white/90">{selectedSite.nasaRover.mission}</div>
-                  {selectedSite.marsTrekBookmark && (
-                    <div className="mt-2 rounded border border-cyan-400/20 bg-slate-900/70 p-2 text-[8.5px] leading-tight text-cyan-200">
-                      <div className="font-semibold">
-                        ITEM TYPE: {selectedSite.marsTrekBookmark.itemType} ·{' '}
-                        {selectedSite.marsTrekBookmark.name}
-                      </div>
-                      <div className="mt-0.5 break-all text-white/75">
-                        EXTENT: {selectedSite.marsTrekBookmark.extent.join(', ')}
-                      </div>
-                    </div>
-                  )}
-                  <div className="mt-2 text-white/75">
-                    <span className="text-cyan-300">INSTRUMENTS:</span> {selectedSite.nasaRover.instruments}
-                  </div>
-                  <div className="mt-1.5 text-white/80">
-                    <span className="text-amber-300">KEY DISCOVERIES:</span> {selectedSite.nasaRover.keyDiscoveries}
-                  </div>
-                  <div className="mt-1.5 text-[9px] text-sky-300/85">
-                    SOURCE: {selectedSite.nasaRover.referenceSource}
-                  </div>
-                </div>
-
-                {selectedSite.nasaRover.routeWaypoints?.length > 0 && (
-                  <div className="rounded-lg border border-white/15 bg-black/65 p-3 text-[9.5px]">
-                    <div className="mb-1.5 font-bold text-green-300">MISSION TRAVERSE PINPOINTS</div>
-                    <div className="space-y-1.5">
-                      {selectedSite.nasaRover.routeWaypoints.map((wp) => (
-                        <div key={wp.id} className="rounded border border-white/10 bg-slate-900/75 p-2">
-                          <div className="flex items-center justify-between font-semibold text-white">
-                            <span>{wp.name}</span>
-                            <span className="text-green-300">{wp.sol}</span>
-                          </div>
-                          <div className="mt-0.5 text-[8.5px] text-white/70">{wp.detail}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap gap-x-3 gap-y-1 rounded border border-white/10 bg-black/60 p-2.5 text-[8.5px] text-white/70">
-                  <span className="font-semibold text-cyan-300">REFERENCES:</span>
-                  <a href="https://trek.nasa.gov/mars/" target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                    Mars Trek
-                  </a>
-                  <a href="https://astrogeology-usgs.hub.arcgis.com/pages/interactive-maps-mars" target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                    USGS Interactive Maps
-                  </a>
-                  <a href="https://science.nasa.gov/resource/curiositys-proposed-path-up-mount-sharp/" target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                    Curiosity Mount Sharp Path
-                  </a>
-                  <a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                    NASA Worldview
-                  </a>
-                  <a href="https://mars.nasa.gov/mars2020/multimedia/raw-images/" target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                    Perseverance Raw Images
-                  </a>
-                </div>
-              </div>
-            </div>
+            {/* 5. Primary Action */}
+            <button
+              type="button"
+              onClick={() => deployToSurface(selectedSite.id)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 active:scale-[0.99]"
+            >
+              <Rocket className="h-4 w-4" />
+              <span>DEPLOY TO SURFACE</span>
+            </button>
           </div>
         </div>
       )}
@@ -626,58 +583,38 @@ export default function OrbitalHUD() {
       {/* Bottom Bar: Hidden during descent dive for unobstructed approach */}
       {!isDeploying ? (
         <div className="relative flex flex-col items-center gap-2">
-        {orbitalLayer !== 'OPTICAL' && activeLayerObj ? (
-          <div className="rounded border border-white/15 bg-black/50 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-sky-200/90 backdrop-blur-md">
-            {activeLayerObj.caption}
-          </div>
-        ) : !selectedSite ? (
-          <div className="font-mono text-[10px] tracking-widest text-white/45">
-            SELECT A NASA ROVER PINPOINT ABOVE OR ON THE MARS GLOBE
-          </div>
-        ) : null}
+          {orbitalLayer !== 'OPTICAL' && activeLayerObj ? (
+            <div className="rounded border border-white/15 bg-black/50 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-sky-200/90 backdrop-blur-md">
+              {activeLayerObj.caption}
+            </div>
+          ) : !selectedSite ? (
+            <div className="font-mono text-[10px] tracking-widest text-white/45">
+              SELECT A NASA ROVER PINPOINT ABOVE OR ON THE MARS GLOBE
+            </div>
+          ) : null}
 
-        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/15 bg-black/45 p-1 shadow-xl backdrop-blur-md">
-          {ORBITAL_LAYERS.map((layer) => {
-            const Icon = LAYER_ICONS[layer.id];
-            const active = orbitalLayer === layer.id;
-            return (
-              <button
-                key={layer.id}
-                type="button"
-                onClick={() => setOrbitalLayer(layer.id)}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[11px] tracking-wider transition ${
-                  active
-                    ? 'border border-sky-400/40 bg-sky-500/20 text-white shadow-inner'
-                    : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white/90'
-                }`}
-              >
-                <Icon className={`h-3 w-3 ${active ? 'text-sky-300' : 'text-white/50'}`} />
-                <span className="text-white/40">[{layer.key}]</span>
-                <span>{layer.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Subtle Data Source Micro-Badge */}
-        <div className="pointer-events-none flex items-center gap-1.5 rounded border border-white/15 bg-black/40 px-2 py-0.5 font-mono text-[10px] tracking-wider text-white/70 backdrop-blur-md sm:absolute sm:right-0 sm:bottom-0.5">
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              orbitalDataSource === 'ACTIVE' || orbitalDataSource === 'LIVE'
-                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
-                : orbitalDataSource === 'LOADING'
-                ? 'animate-pulse bg-sky-400'
-                : 'bg-amber-400'
-            }`}
-          />
-          <span>
-            {orbitalDataSource === 'ACTIVE' || orbitalDataSource === 'LIVE'
-              ? 'DATA: NASA MOLA / VIKING [ACTIVE]'
-              : orbitalDataSource === 'LOADING'
-              ? 'DATA: NASA MOLA / VIKING [SYNCING]'
-              : 'DATA: CACHED SYNTHETIC'}
-          </span>
-        </div>
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/15 bg-black/45 p-1 shadow-xl backdrop-blur-md">
+            {ORBITAL_LAYERS.map((layer) => {
+              const Icon = LAYER_ICONS[layer.id];
+              const active = orbitalLayer === layer.id;
+              return (
+                <button
+                  key={layer.id}
+                  type="button"
+                  onClick={() => setOrbitalLayer(layer.id)}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[11px] tracking-wider transition ${
+                    active
+                      ? 'border border-sky-400/40 bg-sky-500/20 text-white shadow-inner'
+                      : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white/90'
+                  }`}
+                >
+                  <Icon className={`h-3 w-3 ${active ? 'text-sky-300' : 'text-white/50'}`} />
+                  <span className="text-white/40">[{layer.key}]</span>
+                  <span>{layer.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div className="h-8" />

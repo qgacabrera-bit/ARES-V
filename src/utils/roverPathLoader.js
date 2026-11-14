@@ -118,50 +118,67 @@ function extractGeoJsonVertices(fc) {
   return { pts, featureCount: features.length, latestSol };
 }
 
-function decimateCoords(pts, maxPts = 36) {
+function decimateCoords(pts, maxPts = 38) {
   if (pts.length <= maxPts) return pts;
-  const out = [];
-  const step = (pts.length - 1) / (maxPts - 1);
-  for (let i = 0; i < maxPts; i++) {
-    const idx = Math.min(pts.length - 1, Math.round(i * step));
-    out.push([Number(pts[idx][0].toFixed(5)), Number(pts[idx][1].toFixed(5))]);
+  const cum = new Float64Array(pts.length);
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    cum[i] = total;
   }
+  if (total < 1e-9) return [pts[0], pts[pts.length - 1]];
+  const out = [[Number(pts[0][0].toFixed(5)), Number(pts[0][1].toFixed(5))]];
+  let cursor = 1;
+  for (let k = 1; k < maxPts - 1; k++) {
+    const target = (k / (maxPts - 1)) * total;
+    while (cursor < pts.length - 1 && cum[cursor] < target) cursor++;
+    out.push([Number(pts[cursor][0].toFixed(5)), Number(pts[cursor][1].toFixed(5))]);
+  }
+  const last = pts[pts.length - 1];
+  out.push([Number(last[0].toFixed(5)), Number(last[1].toFixed(5))]);
   return out;
 }
 
+export const MARS_TRAVERSE_SCALE_M_PER_KM = 2.0;
+
 /**
- * Projects decimated real Mars GeoJSON [lon, lat] points into the local 68m EVA sector,
- * anchored at the rover's landingPosition (Sol 0) and maintaining true relative shape.
+ * Projects decimated real Mars GeoJSON [lon, lat] points isotropically into scene meters,
+ * anchored at the rover's landingPosition (Sol 0) with path arc length strictly proportional
+ * (MARS_TRAVERSE_SCALE_M_PER_KM = 2.0m per km) to official NASA odometry.
  */
-function normalizeLonLatToLocal(geoPts, landingPos, roverPos) {
+export function normalizeLonLatToLocal(geoPts, landingPos, roverPos, totalOdometryKm = null) {
   if (!geoPts || geoPts.length < 2) return [landingPos, roverPos];
 
-  let minLon = Infinity;
-  let maxLon = -Infinity;
   let minLat = Infinity;
   let maxLat = -Infinity;
   for (let i = 0; i < geoPts.length; i++) {
-    const [lon, lat] = geoPts[i];
-    if (lon < minLon) minLon = lon;
-    if (lon > maxLon) maxLon = lon;
+    const lat = geoPts[i][1];
     if (lat < minLat) minLat = lat;
     if (lat > maxLat) maxLat = lat;
   }
 
-  const spanLon = Math.max(1e-5, maxLon - minLon);
-  const spanLat = Math.max(1e-5, maxLat - minLat);
   const cosLat = Math.cos(((minLat + maxLat) * 0.5 * Math.PI) / 180);
-  const spanDeg = Math.max(spanLon * cosLat, spanLat);
-  const scaleToMeters = 19.0 / spanDeg;
-
   const [startLon, startLat] = geoPts[0];
-  return geoPts.map(([lon, lat]) => {
-    const dx = (lon - startLon) * cosLat * scaleToMeters;
-    const dz = -(lat - startLat) * scaleToMeters; // North is negative Z
-    const clampedX = Math.max(-28, Math.min(28, Number((landingPos[0] + dx).toFixed(2))));
-    const clampedZ = Math.max(-28, Math.min(28, Number((landingPos[1] + dz).toFixed(2))));
-    return [clampedX, clampedZ];
-  });
+  const offsetsKm = geoPts.map(([lon, lat]) => [
+    (lon - startLon) * cosLat * 59.27,
+    -(lat - startLat) * 59.27, // North is negative Z
+  ]);
+
+  let polyKm = 0;
+  for (let i = 1; i < offsetsKm.length; i++) {
+    polyKm += Math.hypot(
+      offsetsKm[i][0] - offsetsKm[i - 1][0],
+      offsetsKm[i][1] - offsetsKm[i - 1][1]
+    );
+  }
+
+  const targetArcMeters = (totalOdometryKm || polyKm) * MARS_TRAVERSE_SCALE_M_PER_KM;
+  const scale = targetArcMeters / Math.max(1e-4, polyKm);
+
+  return offsetsKm.map(([kx, kz]) => [
+    Number((landingPos[0] + kx * scale).toFixed(2)),
+    Number((landingPos[1] + kz * scale).toFixed(2)),
+  ]);
 }
 
 /**
@@ -207,7 +224,8 @@ export async function fetchLiveRoverTraverse(siteId) {
       const localPts = normalizeLonLatToLocal(
         decimated,
         rover.landingPosition || rover.traversePoints[0],
-        rover.position
+        rover.position,
+        rover.totalOdometryKm
       );
 
       const liveResult = {

@@ -429,6 +429,96 @@ function buildTerrainChunkGeometry(chunk, site) {
   return geom;
 }
 
+function RouteWayfinder3D({ siteProfile }) {
+  const activeRoute = useMissionStore((s) => s.activeRoute);
+  const arrowRefs = useRef([]);
+  const beaconRef = useRef();
+
+  const routeData = useMemo(() => {
+    const rawPts = activeRoute?.points;
+    if (!rawPts || rawPts.length < 2) return null;
+
+    const vecs = rawPts.map(([wx, , wz]) => {
+      const y = getTerrainHeightAt(wx, wz, siteProfile) + 0.18;
+      return new THREE.Vector3(wx, y, wz);
+    });
+
+    const curve = new THREE.CatmullRomCurve3(vecs);
+    const totalLen = curve.getLength();
+    const stepCount = Math.max(4, Math.min(42, Math.floor(totalLen / 2.2)));
+    const arrows = [];
+    for (let i = 0; i < stepCount; i++) {
+      const t = (i + 0.5) / stepCount;
+      const pos = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).normalize();
+      const yaw = Math.atan2(tangent.x, tangent.z);
+      arrows.push({ pos, yaw });
+    }
+
+    const endPt = vecs[vecs.length - 1];
+    return { curve, arrows, endPt };
+  }, [activeRoute, siteProfile]);
+
+  useFrame(({ clock }) => {
+    if (!routeData) return;
+    const t = clock.elapsedTime;
+    for (let i = 0; i < arrowRefs.current.length; i++) {
+      const mesh = arrowRefs.current[i];
+      if (!mesh) continue;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4.5 - i * 0.65);
+      if (mesh.material) {
+        mesh.material.opacity = 0.35 + pulse * 0.6;
+      }
+      const s = 0.88 + pulse * 0.28;
+      mesh.scale.set(s, s, s);
+    }
+    if (beaconRef.current) {
+      beaconRef.current.rotation.y = t * 1.4;
+      const bs = 0.92 + Math.sin(t * 3.2) * 0.1;
+      beaconRef.current.scale.set(bs, 1, bs);
+    }
+  });
+
+  if (!routeData) return null;
+
+  return (
+    <group>
+      {/* Glowing Cyan Guide Ribbon */}
+      <mesh>
+        <tubeGeometry args={[routeData.curve, 64, 0.04, 8, false]} />
+        <meshBasicMaterial color="#38bdf8" transparent opacity={0.42} depthWrite={false} />
+      </mesh>
+
+      {/* Animated Game-Style Pointer Arrows */}
+      {routeData.arrows.map((a, idx) => (
+        <mesh
+          key={idx}
+          ref={(el) => {
+            arrowRefs.current[idx] = el;
+          }}
+          position={[a.pos.x, a.pos.y + 0.08, a.pos.z]}
+          rotation={[Math.PI / 2, 0, -a.yaw]}
+        >
+          <coneGeometry args={[0.18, 0.38, 3]} />
+          <meshBasicMaterial color="#67e8f9" transparent opacity={0.85} depthWrite={false} />
+        </mesh>
+      ))}
+
+      {/* Destination Waypoint Ring & Light Pillar */}
+      <group position={[routeData.endPt.x, routeData.endPt.y - 0.06, routeData.endPt.z]}>
+        <mesh ref={beaconRef} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.65, 0.85, 28]} />
+          <meshBasicMaterial color="#38bdf8" side={THREE.DoubleSide} transparent opacity={0.75} />
+        </mesh>
+        <mesh position={[0, 2.2, 0]}>
+          <cylinderGeometry args={[0.04, 0.12, 4.4, 12, 1, true]} />
+          <meshBasicMaterial color="#38bdf8" transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
 export default function SurfaceEVA() {
   const selectedSiteId = useMissionStore((s) => s.selectedSiteId) || 'jezero';
   const evaLayer = useMissionStore((s) => s.evaLayer);
@@ -651,6 +741,9 @@ export default function SurfaceEVA() {
           isCollected={siteCollectedIds.includes(target.id)}
         />
       ))}
+
+      {/* 3D Animated Pointer Path for Active Route */}
+      <RouteWayfinder3D siteProfile={site.terrainProfile} />
 
       {/* Subsurface RIMFAX Radar Wave & Echo Rings */}
       <RimfaxRadarWave siteProfile={site.terrainProfile} />

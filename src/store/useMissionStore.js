@@ -18,7 +18,8 @@ export const useMissionStore = create((set, get) => ({
 
   // Diegetic ARES-V Field Slate & EVA Field Tools
   wristMapOpen: false,
-  slateTab: 'MAP', // 'MAP' | 'SPECTRA' | 'MOBILITY'
+  areaCompleteModalOpen: false,
+  slateTab: 'MAP', // 'MAP' | 'SPECTRA'
   inspectedTargetId: null,
   headlampOn: false,
   sunGlareFactor: 0,
@@ -121,6 +122,7 @@ export const useMissionStore = create((set, get) => ({
       activeTargetId: null,
       observedTargetId: null,
       wristMapOpen: false,
+      areaCompleteModalOpen: false,
       slateTab: 'MAP',
       inspectedTargetId: null,
       headlampOn: false,
@@ -207,6 +209,7 @@ export const useMissionStore = create((set, get) => ({
         activeTargetId: null,
         observedTargetId: null,
         wristMapOpen: false,
+        areaCompleteModalOpen: false,
         slateTab: 'MAP',
         inspectedTargetId: null,
         headlampOn: false,
@@ -239,6 +242,78 @@ export const useMissionStore = create((set, get) => ({
   },
 
   clearAbortNotice: () => set({ abortNotice: null }),
+
+  setAreaCompleteModalOpen: (open) => set({ areaCompleteModalOpen: open }),
+
+  switchAreaFromEva: (targetSiteId) => {
+    const site = LANDING_ZONES_BY_ID[targetSiteId];
+    if (!site) return;
+    if (document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore pointer lock exit errors
+      }
+    }
+    set((state) => ({
+      selectedSiteId: targetSiteId,
+      viewMode: 'EVA',
+      evaLayer: 'OPTICAL',
+      evaStartTime: Date.now(),
+      isTransitioning: true,
+      isDeploying: false,
+      deployProgress: 0,
+      activeTargetId: null,
+      observedTargetId: null,
+      wristMapOpen: false,
+      areaCompleteModalOpen: false,
+      slateTab: 'MAP',
+      inspectedTargetId: null,
+      headlampOn: false,
+      sunGlareFactor: 0,
+      activeRoute: null,
+      radarPulse: { active: false, origin: [0, 0, 0], progress: 0 },
+      scanningState: { active: false, targetId: null, progress: 0 },
+      sampleDrawerOpen: false,
+      lastCollectedSample: null,
+      carriedSamples: [],
+      carriedMassKg: 0,
+      collectedSamples: {
+        ...state.collectedSamples,
+        [targetSiteId]: [...(state.vaultedSamples[targetSiteId] || [])],
+      },
+      physiology: {
+        oxygen: 100,
+        bodyTempC: 37.0,
+        heaterReserve: 100,
+        stamina: 100,
+      },
+      landerReserves: {
+        oxygenReserve: 300,
+        heaterReserve: 300,
+        maxReserve: 300,
+      },
+      nearLander: false,
+      landerDistance: 8.0,
+      landerStatusMessage: null,
+      abortNotice: null,
+      nearRover: false,
+      roverDistance: 14.0,
+      customPinpoint: null,
+      telemetry: {
+        heading: 0,
+        slope: 0.8,
+        radiation: site?.baseRadiation ?? 0.64,
+        elevation: site?.baseElevation ?? -2560,
+        position: [0, 0],
+        pointerLocked: false,
+      },
+    }));
+
+    setTimeout(() => {
+      set({ isTransitioning: false });
+    }, 280);
+  },
 
   setWristMapOpen: (open) => {
     if (open && document.pointerLockElement) {
@@ -464,6 +539,13 @@ export const useMissionStore = create((set, get) => ({
 
   completeScan: (siteId, target) => {
     if (!siteId || !target) return;
+    if (document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore pointer lock exit errors
+      }
+    }
     set((state) => {
       const existing = state.collectedSamples[siteId] || [];
       const updatedSiteSamples = existing.includes(target.id)
@@ -496,6 +578,10 @@ export const useMissionStore = create((set, get) => ({
         },
         lastCollectedSample: { ...target, massKg },
         sampleDrawerOpen: true,
+        inspectedTargetId: target.id,
+        slateTab: 'SPECTRA',
+        wristMapOpen: true,
+        telemetry: { ...state.telemetry, pointerLocked: false },
       };
     });
   },
@@ -544,6 +630,17 @@ export const useMissionStore = create((set, get) => ({
         ? `AIRLOCK SYNC // ${statusParts.join(' · ')}`
         : 'AIRLOCK CONNECTED // SUIT SYSTEMS & VAULT NOMINAL';
 
+    const siteTargetCount = siteId ? LANDING_ZONES_BY_ID[siteId]?.targets?.length || 0 : 0;
+    const allSiteSamplesVaulted = siteTargetCount > 0 && nextVault.length >= siteTargetCount;
+
+    if (allSiteSamplesVaulted && document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore pointer lock exit errors
+      }
+    }
+
     set({
       vaultedSamples: siteId
         ? {
@@ -553,6 +650,10 @@ export const useMissionStore = create((set, get) => ({
         : state.vaultedSamples,
       carriedSamples: [],
       carriedMassKg: 0,
+      areaCompleteModalOpen: allSiteSamplesVaulted ? true : state.areaCompleteModalOpen,
+      telemetry: allSiteSamplesVaulted
+        ? { ...state.telemetry, pointerLocked: false }
+        : state.telemetry,
       physiology: {
         oxygen: Number(nextSuitO2.toFixed(1)),
         heaterReserve: Number(nextSuitHeat.toFixed(1)),

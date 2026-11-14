@@ -91,39 +91,9 @@ export default function App() {
       }
     };
 
-    let lastRightToggleAt = 0;
-
-    const onMouseDown = (e) => {
-      if (e.button !== 2) return;
-      const state = useMissionStore.getState();
-      if (state.viewMode === 'EVA') {
-        const now = performance.now();
-        if (now - lastRightToggleAt > 120) {
-          lastRightToggleAt = now;
-          state.toggleWristMap();
-        }
-      }
-    };
-
-    const onContextMenu = (e) => {
-      const state = useMissionStore.getState();
-      if (state.viewMode === 'EVA') {
-        e.preventDefault();
-        const now = performance.now();
-        if (now - lastRightToggleAt > 120) {
-          lastRightToggleAt = now;
-          state.toggleWristMap();
-        }
-      }
-    };
-
     window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('contextmenu', onContextMenu);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('contextmenu', onContextMenu);
     };
   }, []);
 
