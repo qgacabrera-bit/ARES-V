@@ -1,35 +1,36 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Flame, Globe, Rocket, Snowflake, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { LANDING_ZONES, LANDING_ZONES_BY_ID, ORBITAL_LAYERS } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import { fetchLiveRoverTraverse, getMarsAlbedoCrop } from '../../utils/roverPathLoader';
 
-const LAYER_ICONS = {
-  OPTICAL: Globe,
-  THERMAL: Flame,
-  ICE: Snowflake,
-};
+const NAV_ITEMS = [
+  { id: null, label: 'Map' },
+  { id: 'ABOUT', label: 'About' },
+  { id: 'HOW_TO', label: 'Controls' },
+  { id: 'TEAM', label: 'Team' },
+];
 
 const SITE_BRIEFING_META = {
   jezero: {
     roverTag: 'M2020 Perseverance',
     coords: '18.44°N, 77.45°E',
-    terrain: '29° Delta Scarps',
+    terrain: 'Delta scarps, up to 29°',
   },
   gale: {
     roverTag: 'MSL Curiosity',
     coords: '4.59°S, 137.44°E',
-    terrain: '28° Slope Ridges',
+    terrain: 'Ridged slopes, up to 28°',
   },
   meridiani: {
     roverTag: 'MER-B Opportunity',
     coords: '1.95°S, 354.47°E',
-    terrain: '24° Crater Slopes',
+    terrain: 'Crater slopes, up to 24°',
   },
   gusev: {
     roverTag: 'MER-A Spirit',
     coords: '14.57°S, 175.47°E',
-    terrain: '25° Talus Slopes',
+    terrain: 'Talus slopes, up to 25°',
   },
 };
 
@@ -150,347 +151,340 @@ export default function OrbitalHUD() {
   }, [selectedSite, liveGeoJson]);
 
   const descentAltKm = Math.max(0.2, 380 * Math.pow(1 - deployProgress, 2.1)).toFixed(1);
+  const siteIndex = selectedSite ? LANDING_ZONES.findIndex((z) => z.id === selectedSite.id) : -1;
+
+  const openInfo = (id) => {
+    setActiveModal(id);
+    if (id !== null && selectedSiteId) selectSite(null);
+  };
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 sm:p-5">
-      {/* Top Bar */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-        <div className="justify-self-start font-mono text-[11px] tracking-[0.2em] text-white/70">
-          ARES-V // ORBITAL RECON
+    <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 sm:p-6">
+      {/* Top bar */}
+      <header className="on-scene flex items-baseline justify-between gap-6">
+        <div className="flex items-baseline gap-6">
+          <div className="text-[15px] font-bold tracking-wide text-bone">ARES-V</div>
+          {!isDeploying && (
+            <nav aria-label="Sections" className="pointer-events-auto flex items-baseline gap-5 text-[13px]">
+              {NAV_ITEMS.map((item) => {
+                const isActive = activeModal === item.id;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => openInfo(item.id)}
+                    className={`border-b pb-0.5 transition-colors ${
+                      isActive
+                        ? 'border-bone text-bone'
+                        : 'border-transparent text-dim hover:text-bone'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+          )}
         </div>
 
-        {/* Center Top Navigation Pill Bar */}
-        {!isDeploying ? (
-          <nav
-            aria-label="Orbital Navigation"
-            className="pointer-events-auto flex items-center justify-self-center gap-1 rounded-full border border-white/15 bg-slate-950/75 px-2 py-1 backdrop-blur-md"
-          >
-            {[
-              { id: null, label: 'ORBITAL MAP' },
-              { id: 'ABOUT', label: 'ABOUT' },
-              { id: 'HOW_TO', label: 'HOW TO' },
-              { id: 'TEAM', label: 'TEAM' },
-            ].map((item) => {
-              const isActive = activeModal === item.id;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => {
-                    setActiveModal(item.id);
-                    if (item.id !== null && selectedSiteId) selectSite(null);
-                  }}
-                  className={`rounded-full px-3 py-1 font-mono text-[10px] tracking-[0.14em] transition ${
-                    isActive
-                      ? 'bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-400/50'
-                      : 'text-white/70 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
-        ) : (
-          <div />
-        )}
-
-        {/* Top-Right Minimal Telemetry & Scale Micro-Badge */}
-        <div className="justify-self-end rounded border border-white/15 bg-black/40 px-2.5 py-1 font-mono text-[11px] tracking-wider text-white/75 backdrop-blur-md">
+        <div className="num hidden text-[11px] text-dim sm:block">
           {isDeploying && selectedSite
-            ? `EDL DESCENT · ${selectedSite.shortName} · 1 UNIT = 1,000 KM`
-            : '1 UNIT = 1,000 KM · MRO RELAY · ALT 380 KM'}
+            ? `Descending to ${selectedSite.name}`
+            : 'Orbit 380 km · 1 grid unit = 1,000 km'}
         </div>
-      </div>
+      </header>
 
-      {/* Center Emergency Abort Notice if triggered by 0% O2 */}
+      {/* Emergency abort notice (EVA ended at 0% O2) */}
       {abortNotice && !isDeploying && (
-        <div className="pointer-events-auto mx-auto mt-2 flex items-center gap-2 rounded border border-red-400/55 bg-red-950/75 px-3 py-1 font-mono text-[10px] tracking-wider text-red-100 shadow-lg backdrop-blur-md">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-300" />
-          <span>{abortNotice}</span>
+        <div className="pointer-events-auto mx-auto mt-3 flex max-w-xl items-start gap-3 border-l-2 border-crit bg-panel px-3 py-2 text-[13px] text-bone">
+          <span className="flex-1">{abortNotice}</span>
           <button
             type="button"
             onClick={clearAbortNotice}
-            aria-label="Dismiss emergency notice"
-            className="rounded p-0.5 text-red-200/70 hover:bg-red-500/25 hover:text-white"
+            aria-label="Dismiss notice"
+            className="icon-btn -m-1"
           >
-            <X className="h-3 w-3" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      {/* Compact Left-Side Landing Site Quick Selector Rail */}
+      {/* Landing site list */}
       {!isDeploying && (
-        <div className="pointer-events-auto fixed top-1/2 left-6 z-10 flex w-56 -translate-y-1/2 flex-col gap-2">
-          {LANDING_ZONES.map((zone) => {
-            const rv = zone.nasaRover;
-            const active = selectedSiteId === zone.id;
-            return (
-              <button
-                key={zone.id}
-                type="button"
-                onMouseEnter={() => setHoveredSite(zone.id)}
-                onMouseLeave={() => setHoveredSite(null)}
-                onClick={() => {
-                  setActiveModal(null);
-                  selectSite(zone.id);
-                }}
-                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left backdrop-blur-md transition ${
-                  active
-                    ? 'border-cyan-400/75 bg-slate-950/85 text-white shadow-[0_0_16px_rgba(34,211,238,0.22)]'
-                    : 'border-white/15 bg-slate-950/65 text-white/80 hover:border-amber-300/60 hover:bg-slate-950/85 hover:text-white'
-                }`}
-              >
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${
-                    active
-                      ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]'
-                      : 'bg-amber-400 shadow-[0_0_6px_#fbbf24]'
-                  }`}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-semibold text-white">{zone.name}</div>
-                  <div className="truncate font-mono text-[10px] text-slate-400">
-                    {rv?.shortName || zone.shortName} · {rv?.totalOdometryKm} km
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+        <div className="pointer-events-auto fixed top-1/2 left-4 z-10 w-60 -translate-y-1/2 sm:left-6">
+          <div className="label on-scene mb-2">Landing sites</div>
+          <ol className="panel">
+            {LANDING_ZONES.map((zone, idx) => {
+              const rv = zone.nasaRover;
+              const active = selectedSiteId === zone.id;
+              const vaulted = (vaultedSamples[zone.id] || []).length;
+              return (
+                <li key={zone.id} className={idx > 0 ? 'border-t border-rule' : ''}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHoveredSite(zone.id)}
+                    onMouseLeave={() => setHoveredSite(null)}
+                    onClick={() => {
+                      setActiveModal(null);
+                      selectSite(zone.id);
+                    }}
+                    aria-pressed={active}
+                    className={`flex w-full items-baseline gap-3 border-l-2 px-3 py-2.5 text-left transition-colors ${
+                      active
+                        ? 'border-hivis bg-raised'
+                        : 'border-transparent hover:bg-raised'
+                    }`}
+                  >
+                    <span className={`num text-[11px] ${active ? 'text-hivis' : 'text-faint'}`}>
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="place block text-[15px] leading-tight text-bone">
+                        {zone.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] text-dim">
+                        {titleCase(rv?.shortName || zone.shortName)}
+                        {rv?.totalOdometryKm != null ? `, ${rv.totalOdometryKm} km driven` : ''}
+                        {vaulted > 0 ? ` · ${vaulted}/${zone.targets.length}` : ''}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
         </div>
       )}
 
-      {/* Middle Area: Center EDL Lock Reticle during Dive */}
+      {/* Descent reticle */}
       <div className="flex flex-1 items-center justify-center">
         {isDeploying && selectedSite && (
-          <div className="flex flex-col items-center gap-3">
-            {/* Minimal Lock-On Reticle Brackets */}
+          <div className="on-scene flex flex-col items-center gap-3">
             <div className="relative flex h-16 w-16 items-center justify-center">
-              <span className="absolute top-0 left-0 h-3 w-3 border-t-2 border-l-2 border-sky-400/90" />
-              <span className="absolute top-0 right-0 h-3 w-3 border-t-2 border-r-2 border-sky-400/90" />
-              <span className="absolute bottom-0 left-0 h-3 w-3 border-b-2 border-l-2 border-sky-400/90" />
-              <span className="absolute bottom-0 right-0 h-3 w-3 border-b-2 border-r-2 border-sky-400/90" />
-              <div className="h-1.5 w-1.5 rounded-full bg-sky-300 shadow-[0_0_8px_#38bdf8]" />
+              <span className="absolute top-0 left-0 h-3 w-3 border-t border-l border-bone" />
+              <span className="absolute top-0 right-0 h-3 w-3 border-t border-r border-bone" />
+              <span className="absolute bottom-0 left-0 h-3 w-3 border-b border-l border-bone" />
+              <span className="absolute right-0 bottom-0 h-3 w-3 border-r border-b border-bone" />
+              <div className="h-1 w-1 bg-bone" />
             </div>
-            <div className="rounded border border-sky-400/35 bg-black/55 px-3 py-1 font-mono text-[10px] tracking-[0.18em] text-sky-200 backdrop-blur-md">
-              EDL DESCENT LOCK // ALT: {descentAltKm} KM
-            </div>
+            <div className="num text-[12px] text-bone">Alt {descentAltKm} km</div>
           </div>
         )}
       </div>
 
-      {/* Centered ABOUT / HOW TO / TEAM Modals */}
+      {/* About / Controls / Team */}
       {!isDeploying && activeModal && (
-        <div
-          onClick={() => setActiveModal(null)}
-          className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-black/45 p-4"
+        <Sheet
+          eyebrow="ARES-V"
+          title={
+            activeModal === 'ABOUT'
+              ? 'About the sim'
+              : activeModal === 'HOW_TO'
+                ? 'Controls'
+                : 'Team'
+          }
+          onClose={() => setActiveModal(null)}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg rounded-2xl border border-white/15 bg-slate-950/90 p-6 font-sans text-white shadow-2xl backdrop-blur-xl"
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-3">
+          {activeModal === 'ABOUT' && (
+            <div className="space-y-5 text-[13px] leading-relaxed text-bone/90">
+              <p>
+                Pick one of four real rover landing sites from orbit, drop to the surface, and walk
+                the rover&rsquo;s route on foot. Core the rock targets, haul them back to the lander,
+                and get out before your oxygen does.
+              </p>
+
+              <div className="border-l-2 border-hivis pl-3">
+                <div className="label mb-1">Mission brief, Sol 412</div>
+                <p>
+                  You are the lead field geologist on the lander <em>Valkyrie</em>. Orbiters have
+                  mapped these sites for decades and the rovers have driven them. Your job is the
+                  part that needs hands: recover the priority cores along each rover corridor before
+                  the seasonal dust front closes the launch window.
+                </p>
+              </div>
+
               <div>
-                <div className="font-mono text-[10px] tracking-[0.2em] text-cyan-300">
-                  ARES-V // {activeModal === 'HOW_TO' ? 'MISSION GUIDE' : activeModal}
-                </div>
-                <h2 className="mt-0.5 text-lg font-semibold tracking-tight text-white">
-                  {activeModal === 'ABOUT' && 'Augmented Reconnaissance & EVA System'}
-                  {activeModal === 'HOW_TO' && 'Controls & Mission Loop'}
-                  {activeModal === 'TEAM' && 'Avengineers'}
-                </h2>
-                {activeModal === 'TEAM' && (
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Technological Institute of the Philippines – Quezon City · Computer Engineering
-                  </p>
-                )}
+                <div className="label mb-1">Data used</div>
+                <dl className="rows">
+                  <div>
+                    <dt>Global imagery</dt>
+                    <dd>JPL Mars Trek (WMTS)</dd>
+                  </div>
+                  <div>
+                    <dt>Elevation</dt>
+                    <dd>MGS MOLA</dd>
+                  </div>
+                  <div>
+                    <dt>Thermal inertia</dt>
+                    <dd>Odyssey THEMIS</dd>
+                  </div>
+                  <div>
+                    <dt>Subsurface ice</dt>
+                    <dd>MRO SHARAD</dd>
+                  </div>
+                  <div>
+                    <dt>Rover traverses</dt>
+                    <dd>NASA MMGIS</dd>
+                  </div>
+                </dl>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                aria-label="Close modal"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
+          )}
 
-            {activeModal === 'ABOUT' && (
-              <div className="mt-4 space-y-3">
-                <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/10 p-3.5">
-                  <div className="mb-1.5 font-mono text-[10px] tracking-[0.18em] text-cyan-300">
-                    MISSION BRIEF // SOL 412 · ARES-1
+          {activeModal === 'HOW_TO' && (
+            <div className="space-y-5 text-[13px] text-bone/90">
+              <div>
+                <div className="label mb-1">In orbit</div>
+                <dl className="rows">
+                  <div>
+                    <dt>Rotate the globe</dt>
+                    <dd>Drag</dd>
                   </div>
-                  <p className="text-xs leading-relaxed text-cyan-50/90">
-                    Deployed as Lead Field Geologist aboard <em>Lander Valkyrie</em>, you operate the{' '}
-                    <strong className="text-white">ARES-V Visor</strong> to bridge orbital NASA datasets
-                    with human field intuition, recovering priority cores along historic rover corridors
-                    before the seasonal dust front closes the launch window.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
-                    <div className="mb-1.5 font-mono text-[10px] tracking-wider text-cyan-300">
-                      ORBITAL TELEMETRY
-                    </div>
-                    <p className="text-xs leading-relaxed text-slate-300">
-                      Planetary-scale reconnaissance powered by <strong className="text-white">JPL Mars Trek WMTS</strong>,{' '}
-                      <strong className="text-white">MOLA</strong> elevation,{' '}
-                      <strong className="text-white">THEMIS</strong> thermal, and{' '}
-                      <strong className="text-white">SHARAD</strong> subsurface ice layers.
-                    </p>
+                  <div>
+                    <dt>Zoom</dt>
+                    <dd>Scroll</dd>
                   </div>
-
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
-                    <div className="mb-1.5 font-mono text-[10px] tracking-wider text-cyan-300">
-                      SURFACE EVA
-                    </div>
-                    <p className="text-xs leading-relaxed text-slate-300">
-                      First-person terrain navigation along authentic NASA rover traverses with
-                      field-slate pathfinding and live spectral specimen verification.
-                    </p>
+                  <div>
+                    <dt>Switch map layer</dt>
+                    <dd>
+                      <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>
+                    </dd>
                   </div>
-                </div>
+                  <div>
+                    <dt>Open a site briefing</dt>
+                    <dd>Click a beacon</dd>
+                  </div>
+                </dl>
               </div>
-            )}
 
-            {activeModal === 'HOW_TO' && (
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
-                    <div className="mb-2 font-mono text-[10px] tracking-wider text-cyan-300">
-                      ORBITAL RECON
-                    </div>
-                    <ul className="space-y-1.5 text-xs text-slate-300">
-                      <li><span className="font-mono text-white">Drag</span> — Rotate Mars globe</li>
-                      <li><span className="font-mono text-white">Scroll</span> — Zoom altitude</li>
-                      <li><span className="font-mono text-white">1–3</span> — Switch orbital layers</li>
-                      <li><span className="font-mono text-white">Click Beacon</span> — Inspect &amp; deploy</li>
-                    </ul>
+              <div>
+                <div className="label mb-1">On the surface</div>
+                <dl className="rows">
+                  <div>
+                    <dt>Walk, sprint</dt>
+                    <dd>
+                      <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, <kbd>Shift</kbd>
+                    </dd>
                   </div>
-
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
-                    <div className="mb-2 font-mono text-[10px] tracking-wider text-cyan-300">
-                      SURFACE EVA
-                    </div>
-                    <ul className="space-y-1.5 text-xs text-slate-300">
-                      <li><span className="font-mono text-white">WASD / Shift</span> — Move &amp; sprint</li>
-                      <li><span className="font-mono text-white">M / Tab</span> — Raise Field Slate</li>
-                      <li><span className="font-mono text-white">1–4</span> — NASA data layers</li>
-                      <li><span className="font-mono text-white">R</span> — Subsurface radar pulse</li>
-                      <li><span className="font-mono text-white">E</span> — Scan core / Resupply</li>
-                    </ul>
+                  <div>
+                    <dt>Field slate (map)</dt>
+                    <dd>
+                      <kbd>M</kbd> or <kbd>Tab</kbd>
+                    </dd>
                   </div>
-                </div>
-
-                <div className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-200">
-                  Tip: Offload heavy rock cores at the Lander airlock (<span className="font-mono font-semibold">[E]</span>) to restore stamina and O₂ reserves.
-                </div>
+                  <div>
+                    <dt>Data layers</dt>
+                    <dd>
+                      <kbd>1</kbd>&ndash;<kbd>4</kbd>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Scan a core, resupply, sync rover</dt>
+                    <dd>
+                      <kbd>E</kbd>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Route to nearest target</dt>
+                    <dd>
+                      <kbd>P</kbd>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Radar pulse</dt>
+                    <dd>
+                      <kbd>R</kbd>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Headlamp</dt>
+                    <dd>
+                      <kbd>F</kbd>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Back to orbit</dt>
+                    <dd>
+                      <kbd>O</kbd>
+                    </dd>
+                  </div>
+                </dl>
               </div>
-            )}
 
-            {activeModal === 'TEAM' && (
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    '3D Orbital & Terrain Architecture',
-                    'NASA Data Pipeline & Shaders',
-                    'EVA Systems & Visor UX',
-                  ].map((role) => (
-                    <span
-                      key={role}
-                      className="rounded-full border border-cyan-300/25 bg-cyan-500/10 px-2.5 py-1 font-mono text-[10px] text-cyan-200"
-                    >
-                      {role}
-                    </span>
-                  ))}
-                </div>
+              <p className="leading-relaxed text-dim">
+                Cores are heavy. Every one you carry slows you down and burns oxygen faster, so drop
+                them at the lander airlock (<kbd>E</kbd>) before going back out.
+              </p>
+            </div>
+          )}
 
-                <div className="space-y-1.5 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-slate-300">
-                  <div className="font-mono text-[10px] tracking-wider text-slate-400">
-                    CREW ROSTER
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-white/90">
-                    <span>• Gabriel Cabrera</span>
-                    <span>• Ron Von Angeles</span>
-                    <span>• Angelo Base</span>
-                    <span>• Christian Bondoc</span>
-                    <span>• Jomari Iglesia</span>
-                  </div>
-                </div>
+          {activeModal === 'TEAM' && (
+            <div className="space-y-5 text-[13px] text-bone/90">
+              <div>
+                <div className="text-[17px] font-bold text-bone">Avengineers</div>
+                <p className="mt-1 text-dim">
+                  Computer Engineering, Technological Institute of the Philippines, Quezon City
+                </p>
               </div>
-            )}
-          </div>
-        </div>
+              <ul className="rows">
+                <li>Gabriel Cabrera</li>
+                <li>Ron Von Angeles</li>
+                <li>Angelo Base</li>
+                <li>Christian Bondoc</li>
+                <li>Jomari Iglesia</li>
+              </ul>
+              <p className="leading-relaxed text-dim">
+                We built the orbital globe and terrain, the NASA data pipeline and shaders, and the
+                EVA systems and visor.
+              </p>
+            </div>
+          )}
+        </Sheet>
       )}
 
-      {/* Centered Pre-Deployment Briefing Modal */}
+      {/* Site briefing */}
       {!isDeploying && selectedSite && (
-        <div
-          onClick={() => selectSite(null)}
-          className="pointer-events-auto fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+        <Sheet
+          eyebrow={`Landing site ${String(siteIndex + 1).padStart(2, '0')}`}
+          title={<span className="place text-[26px] leading-tight">{selectedSite.name}</span>}
+          onClose={() => selectSite(null)}
+          closeLabel="Close site briefing"
+          footer={
+            <button
+              type="button"
+              onClick={() => deployToSurface(selectedSite.id)}
+              className="btn btn-primary w-full py-3 text-[14px]"
+            >
+              Deploy to surface
+            </button>
+          }
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-white/15 bg-slate-950/85 p-6 font-sans text-white shadow-2xl backdrop-blur-xl"
-          >
-            {/* 1. Header */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 space-y-1">
-                <h2 className="text-lg font-semibold tracking-tight text-white">
-                  {selectedSite.name}
-                </h2>
-                <div className="font-mono text-[11px] tracking-wide text-cyan-200/80">
-                  {siteMeta.roverTag} · {siteMeta.coords}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => selectSite(null)}
-                aria-label="Close site briefing"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
+          <div className="num -mt-2 text-[11px] text-dim">
+            {siteMeta.roverTag} · {siteMeta.coords}
+          </div>
+
+          <p className="mt-4 text-[14px] leading-relaxed text-bone/90">{selectedSite.objective}</p>
+
+          <dl className="rows mt-5">
+            <div>
+              <dt>Terrain</dt>
+              <dd>{siteMeta.terrain}</dd>
             </div>
-
-            {/* 2. 1-Sentence Mission Goal */}
-            <p className="line-clamp-2 text-sm leading-relaxed text-slate-300">
-              {selectedSite.objective}
-            </p>
-
-            {/* 3. Compact 3-Column Spec Grid */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  TERRAIN
-                </div>
-                <div className="mt-1 truncate text-sm font-semibold text-white">
-                  {siteMeta.terrain}
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  RADIATION
-                </div>
-                <div className="mt-1 text-sm font-semibold text-white">
-                  {selectedSite.baseRadiation} mSv/d
-                </div>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  OBJECTIVES
-                </div>
-                <div className="mt-1 text-sm font-semibold text-white">
-                  {siteSamplesCount} / {selectedSite.targets.length} Samples
-                </div>
-              </div>
+            <div>
+              <dt>Surface radiation</dt>
+              <dd>{selectedSite.baseRadiation} mSv/day</dd>
             </div>
+            <div>
+              <dt>Cores vaulted</dt>
+              <dd>
+                {siteSamplesCount} of {selectedSite.targets.length}
+              </dd>
+            </div>
+          </dl>
 
-            {/* 4. Compact Interactive Route Preview */}
-            {roverPreview && selectedSite.nasaRover && (
-              <div className="h-40 overflow-hidden rounded-xl border border-white/10 bg-slate-950">
+          {roverPreview && selectedSite.nasaRover && (
+            <figure className="mt-5">
+              <div className="h-40 overflow-hidden border border-rule bg-ink">
                 <svg
                   viewBox={`0 0 ${roverPreview.W} ${roverPreview.H}`}
                   preserveAspectRatio="xMidYMid slice"
@@ -503,28 +497,27 @@ export default function OrbitalHUD() {
                     width={roverPreview.imgW}
                     height={roverPreview.imgH}
                     preserveAspectRatio="none"
-                    opacity="0.88"
+                    opacity="0.9"
                   />
-                  <rect width={roverPreview.W} height={roverPreview.H} fill="#020617" opacity="0.28" />
+                  <rect width={roverPreview.W} height={roverPreview.H} fill="#0d0c0b" opacity="0.3" />
                   {roverPreview.pointsAttr && (
                     <>
                       <polyline
                         points={roverPreview.pointsAttr}
                         fill="none"
-                        stroke="#4ade80"
-                        strokeWidth="6"
+                        stroke="#0d0c0b"
+                        strokeWidth="4.5"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        opacity="0.32"
+                        opacity="0.7"
                       />
                       <polyline
                         points={roverPreview.pointsAttr}
                         fill="none"
-                        stroke="#22c55e"
-                        strokeWidth="2.4"
+                        stroke="#ebe4d4"
+                        strokeWidth="1.8"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        opacity="0.96"
                       />
                     </>
                   )}
@@ -533,84 +526,66 @@ export default function OrbitalHUD() {
                       key={m.id}
                       cx={m.svg[0]}
                       cy={m.svg[1]}
-                      r="2.8"
-                      fill="#86efac"
-                      stroke="#022c22"
-                      strokeWidth="0.9"
+                      r="2.6"
+                      fill="#0d0c0b"
+                      stroke="#ebe4d4"
+                      strokeWidth="1.1"
                     />
                   ))}
-                  {/* Sol 0 Touchdown Pin */}
-                  <circle
-                    cx={roverPreview.landingSvg[0]}
-                    cy={roverPreview.landingSvg[1]}
-                    r="6.5"
-                    fill="rgba(250, 204, 21, 0.22)"
-                    stroke="#fde047"
-                    strokeWidth="1.2"
-                  />
+                  {/* Landing point */}
                   <polygon
-                    points={`${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] - 4.2} ${roverPreview.landingSvg[0] + 4.2},${roverPreview.landingSvg[1]} ${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] + 4.2} ${roverPreview.landingSvg[0] - 4.2},${roverPreview.landingSvg[1]}`}
-                    fill="#facc15"
-                    stroke="#020617"
-                    strokeWidth="0.8"
+                    points={`${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] - 5} ${roverPreview.landingSvg[0] + 5},${roverPreview.landingSvg[1]} ${roverPreview.landingSvg[0]},${roverPreview.landingSvg[1] + 5} ${roverPreview.landingSvg[0] - 5},${roverPreview.landingSvg[1]}`}
+                    fill="#ebe4d4"
+                    stroke="#0d0c0b"
+                    strokeWidth="1"
                   />
-                  {/* Current Rover Pin */}
+                  {/* Rover's latest position */}
                   <circle
                     cx={roverPreview.roverSvg[0]}
                     cy={roverPreview.roverSvg[1]}
                     r="4.5"
-                    fill="#22d3ee"
-                    stroke="#020617"
+                    fill="#d6f24a"
+                    stroke="#0d0c0b"
                     strokeWidth="1.2"
                   />
                 </svg>
               </div>
-            )}
-
-            {/* 5. Primary Action */}
-            <button
-              type="button"
-              onClick={() => deployToSurface(selectedSite.id)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 active:scale-[0.99]"
-            >
-              <Rocket className="h-4 w-4" />
-              <span>DEPLOY TO SURFACE</span>
-            </button>
-          </div>
-        </div>
+              <figcaption className="mt-1.5 text-[11px] leading-snug text-dim">
+                {titleCase(selectedSite.nasaRover.shortName || 'Rover')} traverse, from landing (
+                <span className="text-bone">&#9670;</span>) to latest position (
+                <span className="text-hivis">&#9679;</span>).
+              </figcaption>
+            </figure>
+          )}
+        </Sheet>
       )}
 
-      {/* Bottom Bar: Hidden during descent dive for unobstructed approach */}
+      {/* Map layer switch */}
       {!isDeploying ? (
-        <div className="relative flex flex-col items-center gap-2">
-          {orbitalLayer !== 'OPTICAL' && activeLayerObj ? (
-            <div className="rounded border border-white/15 bg-black/50 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-sky-200/90 backdrop-blur-md">
-              {activeLayerObj.caption}
-            </div>
-          ) : !selectedSite ? (
-            <div className="font-mono text-[10px] tracking-widest text-white/45">
-              SELECT A NASA ROVER PINPOINT ABOVE OR ON THE MARS GLOBE
-            </div>
-          ) : null}
+        <div className="flex flex-col items-center gap-2">
+          <div className="on-scene h-4 text-center text-[11px] text-dim">
+            {orbitalLayer !== 'OPTICAL' && activeLayerObj
+              ? activeLayerObj.caption
+              : !selectedSite
+                ? 'Pick a landing site from the list, or click a beacon on the globe.'
+                : null}
+          </div>
 
-          <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/15 bg-black/45 p-1 shadow-xl backdrop-blur-md">
-            {ORBITAL_LAYERS.map((layer) => {
-              const Icon = LAYER_ICONS[layer.id];
+          <div className="panel pointer-events-auto flex">
+            {ORBITAL_LAYERS.map((layer, idx) => {
               const active = orbitalLayer === layer.id;
               return (
                 <button
                   key={layer.id}
                   type="button"
                   onClick={() => setOrbitalLayer(layer.id)}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-[11px] tracking-wider transition ${
-                    active
-                      ? 'border border-sky-400/40 bg-sky-500/20 text-white shadow-inner'
-                      : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white/90'
-                  }`}
+                  aria-pressed={active}
+                  className={`flex items-center gap-2 px-3.5 py-2 text-[12px] transition-colors ${
+                    idx > 0 ? 'border-l border-rule' : ''
+                  } ${active ? 'bg-bone text-ink' : 'text-dim hover:bg-raised hover:text-bone'}`}
                 >
-                  <Icon className={`h-3 w-3 ${active ? 'text-sky-300' : 'text-white/50'}`} />
-                  <span className="text-white/40">[{layer.key}]</span>
-                  <span>{layer.label}</span>
+                  <kbd>{layer.key}</kbd>
+                  <span>{titleCase(layer.label)}</span>
                 </button>
               );
             })}
@@ -620,5 +595,31 @@ export default function OrbitalHUD() {
         <div className="h-8" />
       )}
     </div>
+  );
+}
+
+function titleCase(str) {
+  if (!str) return '';
+  return String(str)
+    .toLowerCase()
+    .replace(/(^|[\s/-])([a-z])/g, (m, pre, ch) => pre + ch.toUpperCase());
+}
+
+/* Docked side sheet. Leaves the globe visible and clickable beside it. */
+function Sheet({ eyebrow, title, onClose, closeLabel = 'Close', footer, children }) {
+  return (
+    <aside className="pointer-events-auto fixed inset-x-0 bottom-0 z-30 flex max-h-[85vh] flex-col border-t border-rule bg-panel text-bone sm:inset-x-auto sm:top-0 sm:right-0 sm:max-h-none sm:w-[400px] sm:border-t-0 sm:border-l">
+      <div className="flex items-start justify-between gap-4 px-6 pt-6">
+        <div className="min-w-0">
+          <div className="label mb-1">{eyebrow}</div>
+          <h2 className="text-[20px] leading-tight font-bold text-bone">{title}</h2>
+        </div>
+        <button type="button" onClick={onClose} aria-label={closeLabel} className="icon-btn -mt-1 -mr-2">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-6 pt-4 pb-6">{children}</div>
+      {footer && <div className="border-t border-rule px-6 py-4">{footer}</div>}
+    </aside>
   );
 }

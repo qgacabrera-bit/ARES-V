@@ -180,20 +180,20 @@ export default function SampleTarget({
       {showFloatingLabel && (isHovered || isScanningThis || !isCollected) && (
         <Html position={[0, 1.45, 0]} center style={{ pointerEvents: 'none' }}>
           {isScanningThis ? (
-            <div className="whitespace-nowrap rounded border border-yellow-400/80 bg-black/85 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-yellow-200 shadow-lg backdrop-blur-md">
-              ⏳ {target.code} // SCANNING {Math.round(scanningState.progress)}%
+            <div className="scene-tag">
+              {target.code} · scanning {Math.round(scanningState.progress)}%
             </div>
           ) : isCollected ? (
-            <div className="whitespace-nowrap rounded border border-emerald-400/50 bg-black/80 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-emerald-300 shadow-lg backdrop-blur-md">
-              ✓ {target.code} // SAMPLED ({target.name})
+            <div className="scene-tag">
+              <span className="text-ok">{target.code} cored</span> · {target.name}
             </div>
           ) : isHovered ? (
-            <div className="whitespace-nowrap rounded border border-sky-300/70 bg-black/85 px-2.5 py-0.5 font-mono text-[10px] tracking-wider text-sky-100 shadow-lg backdrop-blur-md">
-              ? · {target.code} · [E] SCAN SAMPLE
+            <div className="scene-tag">
+              {target.code} · <kbd>E</kbd> to scan
             </div>
           ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-amber-300/70 bg-slate-950/80 font-mono text-xs font-bold text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)] backdrop-blur-md">
-              ?
+            <div className="border border-bone/70 bg-ink/85 px-1 text-[10px] leading-4 whitespace-nowrap text-bone">
+              {target.code}
             </div>
           )}
         </Html>

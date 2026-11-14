@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Globe2, Home, MapPin, Menu, Navigation, Rocket, ScanLine, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { LANDING_ZONES, LANDING_ZONES_BY_ID } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import FieldSlateHUD from './FieldSlateHUD';
@@ -64,16 +64,16 @@ function CompassStrip({
     : null;
 
   // Determine active geologic waypoint (explicit plotted route -> custom pinpoint -> nearest uncollected core -> lander)
-  let waypointLabel = 'LANDER';
+  let waypointLabel = 'Lander';
   let waypointNav = landerNav;
 
   if (activeRoute?.points?.length > 0) {
     const lastPt = activeRoute.points[activeRoute.points.length - 1];
     waypointNav = getArrowAndPct(lastPt[0], lastPt[2]);
-    waypointLabel = activeRoute.targetName || 'ROUTE';
+    waypointLabel = activeRoute.targetName || 'Route';
   } else if (customPinpoint?.position) {
     waypointNav = customNav;
-    waypointLabel = customPinpoint.name || 'FRONTIER';
+    waypointLabel = customPinpoint.name || 'Pin';
   } else {
     let bestTarget = null;
     let bestDist = Infinity;
@@ -96,12 +96,11 @@ function CompassStrip({
   }
 
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative flex h-6 w-56 items-center justify-center overflow-hidden rounded border border-white/15 bg-black/45 font-mono text-[10px] backdrop-blur-md sm:w-68">
-        {/* Center reticle line */}
-        <div className="absolute top-0 bottom-0 left-1/2 z-10 w-px -translate-x-1/2 bg-sky-400/70" />
+    <div className="on-scene flex flex-col items-center gap-1.5">
+      {/* A ruled tape, not a boxed widget: heading is read off the centre tick. */}
+      <div className="num relative h-7 w-64 overflow-hidden border-b border-bone/70 text-[11px] sm:w-80">
+        <div className="absolute bottom-0 left-1/2 h-2.5 w-px -translate-x-1/2 bg-bone" />
 
-        {/* Cardinal & intercardinal markers */}
         {ticks.map((t) => {
           const delta = angleDelta(t.deg);
           if (Math.abs(delta) > 75) return null;
@@ -110,8 +109,8 @@ function CompassStrip({
             <span
               key={t.label}
               style={{ left: `${pct}%` }}
-              className={`absolute -translate-x-1/2 select-none ${
-                t.label.length === 1 ? 'font-semibold text-white/85' : 'text-white/45'
+              className={`absolute top-0 -translate-x-1/2 select-none ${
+                t.label.length === 1 ? 'font-bold text-bone' : 'text-bone/55'
               }`}
             >
               {t.label}
@@ -119,34 +118,25 @@ function CompassStrip({
           );
         })}
 
-        {/* Lander Base bearing triangle on top edge */}
+        {/* Lander: open triangle */}
         <span
           style={{ left: `${landerNav.pct}%` }}
-          title="ARES-V Mars Lander"
-          className="absolute top-0.5 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-cyan-300 shadow-[0_0_6px_#67e8f9]"
+          title="Lander"
+          className="absolute bottom-0.5 h-0 w-0 -translate-x-1/2 border-x-[4px] border-b-[7px] border-x-transparent border-b-bone"
         />
 
-        {/* NASA Rover bearing pip */}
+        {/* Rover: square, filled once synced */}
         {roverNav && (
           <span
             style={{ left: `${roverNav.pct}%` }}
             title={rover.name}
-            className={`absolute top-0.5 h-1.5 w-1.5 -translate-x-1/2 rotate-45 ${
-              isRoverDiscovered
-                ? 'bg-emerald-300 shadow-[0_0_6px_#34d399]'
-                : 'bg-amber-300 shadow-[0_0_6px_#fbbf24]'
+            className={`absolute bottom-0.5 h-1.5 w-1.5 -translate-x-1/2 border border-bone ${
+              isRoverDiscovered ? 'bg-bone' : 'bg-transparent'
             }`}
           />
         )}
 
-        {/* Active Waypoint bearing diamond on bottom edge */}
-        <span
-          style={{ left: `${waypointNav.pct}%` }}
-          title={`Waypoint: ${waypointLabel}`}
-          className="absolute bottom-0.5 h-2 w-2 -translate-x-1/2 rotate-45 bg-sky-400 shadow-[0_0_8px_#38bdf8]"
-        />
-
-        {/* Uncollected sample target bearing pips */}
+        {/* Uncollected sample targets */}
         {targets.map((tgt) => {
           if (collectedIds.includes(tgt.id)) return null;
           const dx = tgt.position[0] - playerPos[0];
@@ -159,29 +149,32 @@ function CompassStrip({
               key={tgt.id}
               style={{ left: `${pct}%` }}
               title={tgt.name}
-              className="absolute bottom-0.5 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-400/80"
+              className="absolute bottom-0.5 h-1 w-1 -translate-x-1/2 rounded-full bg-bone/70"
             />
           );
         })}
 
-        {/* Current heading readout */}
-        <div className="absolute right-1.5 rounded bg-black/70 px-1 text-[9px] text-sky-300">
-          {String(heading).padStart(3, '0')}°
-        </div>
+        {/* Active waypoint */}
+        <span
+          style={{ left: `${waypointNav.pct}%` }}
+          title={`Waypoint: ${waypointLabel}`}
+          className="absolute bottom-0 h-2 w-2 -translate-x-1/2 rotate-45 bg-hivis"
+        />
       </div>
 
-      {/* Slim Dual Bearing Readout: LANDER & Active WAYPOINT */}
-      <div className="flex items-center gap-1.5 font-mono text-[9px] tracking-[0.12em]">
-        <div className="rounded border border-cyan-400/25 bg-black/40 px-2 py-0.5 text-cyan-200/90 backdrop-blur-sm">
-          {landerNav.arrow} LANDER: {Math.round(landerDistance)}m
-        </div>
-        <div className="rounded border border-sky-400/30 bg-black/40 px-2 py-0.5 text-sky-200/95 backdrop-blur-sm">
-          {waypointNav.arrow} WAYPOINT: {waypointLabel} · {Math.round(waypointNav.dist)}m
-        </div>
+      <div className="num flex items-baseline gap-4 text-[11px] text-bone">
+        <span className="font-bold">{String(heading).padStart(3, '0')}°</span>
+        <span className="text-bone/80">
+          {landerNav.arrow} Lander {Math.round(landerDistance)} m
+        </span>
+        <span className="text-hivis">
+          {waypointNav.arrow} {waypointLabel} {Math.round(waypointNav.dist)} m
+        </span>
       </div>
     </div>
   );
 }
+
 
 export default function VisorHUD() {
   const selectedSiteId = useMissionStore((s) => s.selectedSiteId) || 'jezero';
@@ -261,10 +254,6 @@ export default function VisorHUD() {
     64 + (100 - (physiology?.stamina ?? 100)) * 0.78 + (telemetry.slope > 18 ? 14 : 0)
   );
   const ambientTempC = Math.round(-78 + (sunGlareFactor || 0) * 38);
-  const suitIntegrityPct = Math.max(
-    45,
-    Math.round(((physiology?.oxygen ?? 100) * 0.55 + (physiology?.heaterReserve ?? 100) * 0.45))
-  );
   const oxyPct = Math.max(0, Math.min(100, physiology?.oxygen ?? 100));
   const thermPct = Math.max(0, Math.min(100, physiology?.heaterReserve ?? 100));
   const stamPct = Math.max(0, Math.min(100, physiology?.stamina ?? 100));
@@ -282,14 +271,14 @@ export default function VisorHUD() {
       tracker.warnedStress = false;
       tracker.announcedVaultComplete = false;
       setCommsMessage(
-        'CAPCOM // Valkyrie touchdown confirmed. Raise Field Slate [M] to sync NASA rover telemetry and plot your route.'
+        'CAPCOM // Valkyrie, good touchdown. Bring up the field slate with M to pull the rover track and plot a route.'
       );
       return;
     }
 
     if (tracker.prevCollectedCount === 0 && collectedIds.length === 1) {
       setCommsMessage(
-        'SCIENCE // Spectral match verified against NASA archive. Pack mass updated—monitor stamina on >15° slopes.'
+        'SCIENCE // Spectrum matches the archive, nice core. It adds weight, so watch your stamina on anything over 15°.'
       );
     }
     tracker.prevCollectedCount = collectedIds.length;
@@ -301,7 +290,7 @@ export default function VisorHUD() {
     if (isStressed && !tracker.warnedStress) {
       tracker.warnedStress = true;
       setCommsMessage(
-        'FLIGHT // Metabolic O₂ burn elevated. Return to Lander airlock to offload cores and replenish reserves.'
+        'FLIGHT // You are burning O₂ fast. Head back to the airlock, drop the cores and top up.'
       );
     } else if (!isStressed) {
       tracker.warnedStress = false;
@@ -313,7 +302,7 @@ export default function VisorHUD() {
     if (isAllSiteVaulted && !tracker.announcedVaultComplete) {
       tracker.announcedVaultComplete = true;
       setCommsMessage(
-        'CAPCOM // Priority cores secured in ascent vault. Dust front approaching—cleared for orbital return.'
+        'CAPCOM // All cores are in the vault. Dust front is moving in, you are cleared to return to orbit.'
       );
     }
   }, [isAllSiteVaulted]);
@@ -341,25 +330,26 @@ export default function VisorHUD() {
   const hasInteractFocus =
     nearLander || nearRover || (Boolean(activeTarget) && !isActiveCollected);
 
-  return (
-    <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 sm:p-5">
-      {/* Subtle Visor Glass & Scanline Texture */}
-      <div className="visor-scanlines visor-vignette pointer-events-none fixed inset-0 -z-10" />
+  const comms = commsMessage ? commsMessage.split(' // ') : null;
 
-      {/* Auto-Tint Polarized Sun Visor Gradient when facing Martian Sun (minimized) */}
+  return (
+    <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 sm:p-6">
+      {/* Helmet edge falloff */}
+      <div className="visor-vignette pointer-events-none fixed inset-0 -z-10" />
+
+      {/* Sun visor tint when facing the sun */}
       {sunGlareFactor > 0.15 && (
         <div
-          className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-1/3 bg-gradient-to-b from-amber-950/55 via-slate-950/20 to-transparent transition-opacity duration-200"
+          className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-1/3 bg-gradient-to-b from-black/60 to-transparent transition-opacity duration-200"
           style={{ opacity: Math.min(0.22, sunGlareFactor * 0.3) }}
         />
       )}
 
-      {/* Subtle High-Contrast Optical Filter Frame when Headlamp Active */}
       {headlampOn && (
-        <div className="pointer-events-none fixed inset-0 -z-10 shadow-[inset_0_0_45px_rgba(56,189,248,0.1)]" />
+        <div className="pointer-events-none fixed inset-0 -z-10 shadow-[inset_0_0_45px_rgba(255,255,255,0.07)]" />
       )}
 
-      {/* 1. HYPOTHERMIA VISOR FREEZING (Minimized Edge Indicator) */}
+      {/* Hypothermia: frost creeping in from the visor corners */}
       {isHypothermia && (
         <div
           className="pointer-events-none fixed inset-0 -z-10 transition-opacity duration-300"
@@ -377,25 +367,20 @@ export default function VisorHUD() {
             preserveAspectRatio="none"
             className="animate-frost-shimmer fixed inset-0 h-full w-full"
           >
-            {/* Top-left frost fan */}
             <polygon points="0,0 160,0 110,32 130,65 72,82 35,120 0,140" fill="#e0f2fe" opacity="0.14" />
             <path d="M0,0 L120,55 M24,0 L80,75 M0,30 L92,90" stroke="#f0f9ff" strokeWidth="1.2" opacity="0.25" />
-            {/* Top-right frost fan */}
             <polygon points="1000,0 840,0 890,32 870,65 928,82 965,120 1000,140" fill="#e0f2fe" opacity="0.14" />
             <path d="M1000,0 L880,55 M976,0 L920,75 M1000,30 L908,90" stroke="#f0f9ff" strokeWidth="1.2" opacity="0.25" />
-            {/* Bottom-left frost fan */}
             <polygon points="0,600 160,600 112,565 130,532 72,515 35,475 0,460" fill="#bae6fd" opacity="0.14" />
             <path d="M0,600 L125,540 M28,600 L82,520 M0,565 L95,505" stroke="#f0f9ff" strokeWidth="1.2" opacity="0.25" />
-            {/* Bottom-right frost fan */}
             <polygon points="1000,600 840,600 888,565 870,532 928,515 965,475 1000,460" fill="#bae6fd" opacity="0.14" />
             <path d="M1000,600 L875,540 M972,600 L918,520 M1000,565 L905,505" stroke="#f0f9ff" strokeWidth="1.2" opacity="0.25" />
-            {/* Thin rim halo */}
             <rect x="0" y="0" width="1000" height="600" fill="none" stroke="#bae6fd" strokeWidth="4" opacity="0.22" />
           </svg>
         </div>
       )}
 
-      {/* 2. LOW STAMINA / EXHAUSTION (Minimized Edge Indicator) */}
+      {/* Exhaustion: pulse at the edges, breath on the glass */}
       {isLowStamina && (
         <div
           className="pointer-events-none fixed inset-0 -z-10"
@@ -418,7 +403,7 @@ export default function VisorHUD() {
         </div>
       )}
 
-      {/* 3. LOW OXYGEN / HYPOXIA (Minimized Edge Indicator, No Blur) */}
+      {/* Hypoxia: tunnel vision */}
       {isLowOxygen && (
         <div
           className="pointer-events-none fixed inset-0 -z-10"
@@ -433,7 +418,7 @@ export default function VisorHUD() {
         </div>
       )}
 
-      {/* 4. HEAVY PACK ENCUMBRANCE STRAIN (Minimized Edge Indicator) */}
+      {/* Heavy pack strain */}
       {isHeavyPack && (
         <div
           className="pointer-events-none fixed inset-0 -z-10 transition-opacity duration-300"
@@ -446,11 +431,10 @@ export default function VisorHUD() {
                 'radial-gradient(ellipse at 50% 42%, transparent 66%, rgba(217, 119, 6, 0.16) 88%, rgba(120, 53, 15, 0.32) 100%)',
             }}
           />
-          <div className="fixed inset-x-0 bottom-0 h-8 bg-gradient-to-t from-amber-950/35 via-amber-900/10 to-transparent" />
         </div>
       )}
 
-      {/* Diegetic Edge-of-Screen Slope / Radiation Alert Vignette (Minimized) */}
+      {/* Slope and radiation warnings at the edge of vision */}
       {isSlopeHazard && (
         <div className="animate-hazard-vignette pointer-events-none fixed inset-0 -z-10 shadow-[inset_0_0_60px_rgba(239,68,68,0.15)]" />
       )}
@@ -461,215 +445,88 @@ export default function VisorHUD() {
         <div className="animate-hazard-vignette pointer-events-none fixed inset-0 -z-10 shadow-[inset_0_0_60px_rgba(168,85,247,0.12)]" />
       )}
 
-      {/* Curved Astronaut Helmet Visor Bezel & Glass Vignette */}
-      <div
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          boxShadow:
-            'inset 0 0 90px 18px rgba(4, 7, 13, 0.78), inset 0 0 26px 4px rgba(34, 211, 238, 0.08)',
-        }}
-      />
-      <div className="pointer-events-none fixed inset-2 rounded-[52px] border-[3px] border-slate-900/80 shadow-[0_0_0_24px_rgba(3,6,11,0.58)] ring-1 ring-cyan-300/15" />
+      {/* Top row: consumables, clock and compass, body and pack */}
+      <div className="on-scene grid grid-cols-[1fr_auto_1fr] items-start gap-4 select-none">
+        <div className="w-full max-w-[200px] space-y-2.5">
+          <Gauge label="O₂" pct={oxyPct} low={oxyPct < 25} lowClass="bg-crit" />
+          <Gauge label="Heater" pct={thermPct} low={thermPct < 25} lowClass="bg-warn" />
+          <div className="num flex items-baseline gap-3 pt-0.5 text-[11px]">
+            <span className="text-bone">
+              Body {(physiology?.bodyTempC ?? 36.8).toFixed(1)} °C
+            </span>
+            <span className="text-bone/65">Outside {ambientTempC} °C</span>
+          </div>
+        </div>
 
-      {/* TOP CURVED VISOR HUD ARC (Gravity-style EVA Visor Telemetry) */}
-      <div className="pointer-events-none relative mx-auto mt-1 w-full max-w-6xl select-none px-6">
-        {/* Background Curved SVG Visor Frame */}
-        <svg
-          viewBox="0 0 1200 155"
-          preserveAspectRatio="none"
-          className="h-28 w-full overflow-visible opacity-90 sm:h-32"
-          aria-hidden="true"
-        >
-          <defs>
-            <linearGradient id="visorCyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(56, 189, 248, 0.06)" />
-              <stop offset="22%" stopColor="rgba(56, 189, 248, 0.28)" />
-              <stop offset="50%" stopColor="rgba(125, 211, 252, 0.52)" />
-              <stop offset="78%" stopColor="rgba(56, 189, 248, 0.28)" />
-              <stop offset="100%" stopColor="rgba(56, 189, 248, 0.06)" />
-            </linearGradient>
-            <linearGradient id="visorFillGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="rgba(14, 116, 144, 0.22)" />
-              <stop offset="100%" stopColor="rgba(8, 47, 73, 0.04)" />
-            </linearGradient>
-          </defs>
-          {/* Outer curved rim */}
-          <path
-            d="M 28 38 Q 220 8 445 14 L 478 2 L 722 2 L 755 14 Q 980 8 1172 38"
-            fill="none"
-            stroke="url(#visorCyanGrad)"
-            strokeWidth="2"
-          />
-          {/* Subtle translucent visor glass band */}
-          <path
-            d="M 40 48 Q 230 20 455 24 L 485 12 L 715 12 L 745 24 Q 970 20 1160 48 L 1142 96 Q 940 70 738 66 L 710 56 L 490 56 L 462 66 Q 260 70 58 96 Z"
-            fill="url(#visorFillGrad)"
-          />
-          {/* Center clock housing underline */}
-          <path
-            d="M 465 56 L 735 56"
-            stroke="rgba(125, 211, 252, 0.5)"
-            strokeWidth="1.4"
-          />
-        </svg>
+        <div className="flex flex-col items-center">
+          <div className="num text-[26px] leading-none text-bone">{evaClockText}</div>
+          <div className="mt-1 text-[10px] tracking-[0.08em] text-bone/70 uppercase">
+            EVA elapsed · {site.name}
+          </div>
 
-        {/* Overlay Telemetry Content aligned to the curved visor arc */}
-        <div className="absolute inset-x-0 top-4 grid grid-cols-[1fr_auto_1fr] items-start gap-3 px-6">
-          {/* UPPER LEFT: O2 / THERM Bars + Suit Wireframe + Temps */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2 font-mono text-[9px] tracking-[0.2em] text-cyan-200/70">
-              <span>HUD SYS V2.1</span>
-              <span className="hidden text-cyan-300/45 sm:inline">· {site.shortName}</span>
-            </div>
+          <div className="mt-3 hidden sm:block">
+            <CompassStrip
+              heading={telemetry.heading}
+              targets={site.targets}
+              playerPos={telemetry.position}
+              collectedIds={collectedIds}
+              landerDistance={landerDistance}
+              rover={rover}
+              isRoverDiscovered={isRoverDiscovered}
+              customPinpoint={customPinpoint}
+              activeRoute={activeRoute}
+            />
+          </div>
 
-            <div className="flex items-start gap-2.5">
-              {/* Suit Integrity Wireframe Box */}
-              <div className="hidden flex-col items-center rounded-lg border border-cyan-300/30 bg-cyan-950/35 px-2 py-1.5 backdrop-blur-sm sm:flex">
-                <svg viewBox="0 0 36 42" className="h-9 w-8 text-cyan-300/85" fill="none" stroke="currentColor" strokeWidth="1.3">
-                  <circle cx="18" cy="7" r="4.5" />
-                  <path d="M11 14 L25 14 L27 25 L23 25 L22 18 L22 30 L24 40 L19.5 40 L18 31 L16.5 40 L12 40 L14 30 L14 18 L13 25 L9 25 Z" />
-                  <line x1="13" y1="20" x2="23" y2="20" strokeOpacity="0.45" />
-                </svg>
-                <span className="mt-0.5 font-mono text-[8px] tracking-wider text-cyan-200/75">
-                  INT {suitIntegrityPct}%
+          {comms && (
+            <div
+              role="status"
+              className="mt-3 max-w-md border-l-2 border-hivis bg-ink/85 px-3 py-2 text-left text-[12px] leading-snug text-bone [text-shadow:none]"
+            >
+              {comms.length > 1 && (
+                <span className="mr-2 text-[10px] font-bold tracking-[0.08em] text-hivis">
+                  {comms[0]}
                 </span>
-              </div>
-
-              {/* O2 / THERM Segmented Bars & Temps */}
-              <div className="w-full max-w-[195px] space-y-1.5">
-                <div className="space-y-0.5">
-                  <div className="flex items-center justify-between font-mono text-[10px]">
-                    <span className={oxyPct < 25 ? 'text-rose-300' : 'text-cyan-200/85'}>O₂</span>
-                    <span className="text-cyan-100/80">{Math.round(oxyPct)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-cyan-950/70 ring-1 ring-cyan-300/25">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        oxyPct < 25 ? 'bg-rose-400' : 'bg-cyan-300'
-                      }`}
-                      style={{ width: `${oxyPct}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-0.5">
-                  <div className="flex items-center justify-between font-mono text-[10px]">
-                    <span className={thermPct < 25 ? 'text-amber-300' : 'text-cyan-200/75'}>THERM</span>
-                    <span className="text-cyan-100/75">{Math.round(thermPct)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-cyan-950/70 ring-1 ring-cyan-300/20">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        thermPct < 25 ? 'bg-amber-400' : 'bg-sky-400/85'
-                      }`}
-                      style={{ width: `${thermPct}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-baseline gap-2.5 pt-0.5 font-mono text-[11px]">
-                  <span className="font-semibold text-cyan-100">
-                    {(physiology?.bodyTempC ?? 36.8).toFixed(1)}°C
-                  </span>
-                  <span className="text-[10px] text-cyan-200/60">{ambientTempC}°C EXT</span>
-                </div>
-              </div>
+              )}
+              {comms.length > 1 ? comms.slice(1).join(' ') : comms[0]}
             </div>
+          )}
+        </div>
+
+        <div className="ml-auto w-full max-w-[200px] space-y-2.5">
+          <Gauge label="Stamina" pct={stamPct} low={stamPct < 25} lowClass="bg-warn" />
+          <div className="num flex items-baseline justify-between text-[11px] text-bone">
+            <span>
+              Pack {carriedMassKg.toFixed(0)}/{maxPackMassKg} kg
+            </span>
+            <span className="text-bone/65">{telemetry.radiation} mSv</span>
           </div>
 
-          {/* TOP CENTER: EVA TIME Clock + Slim Compass */}
-          <div className="flex flex-col items-center">
-            <div className="flex flex-col items-center rounded-b-xl border-x border-b border-cyan-300/35 bg-slate-950/55 px-5 py-1 shadow-[0_6px_24px_rgba(34,211,238,0.14)] backdrop-blur-md">
-              <div className="font-mono text-lg font-semibold tracking-[0.16em] text-white sm:text-xl">
-                {evaClockText}
-              </div>
-              <div className="font-mono text-[9px] tracking-[0.26em] text-cyan-200/70">
-                EVA TIME
-              </div>
-            </div>
-
-            <div className="mt-2 hidden sm:block">
-              <CompassStrip
-                heading={telemetry.heading}
-                targets={site.targets}
-                playerPos={telemetry.position}
-                collectedIds={collectedIds}
-                landerDistance={landerDistance}
-                rover={rover}
-                isRoverDiscovered={isRoverDiscovered}
-                customPinpoint={customPinpoint}
-                activeRoute={activeRoute}
-              />
-            </div>
-
-            {commsMessage && (
-              <div className="mx-auto mt-2 max-w-xl rounded-full border border-cyan-500/30 bg-slate-950/75 px-4 py-1.5 text-center font-mono text-xs text-cyan-100 shadow-lg backdrop-blur-md">
-                {commsMessage}
-              </div>
-            )}
-          </div>
-
-          {/* UPPER RIGHT: PACK / RAD + H2O / Stamina + Animated ECG + BPM */}
-          <div className="flex flex-col items-end gap-1.5">
-            <div className="flex items-center gap-2 font-mono text-[9px] tracking-[0.18em] text-cyan-200/75">
-              <span>PACK {carriedMassKg.toFixed(0)}/{maxPackMassKg}KG</span>
-              <span className="text-cyan-300/45">·</span>
-              <span>RAD {telemetry.radiation} mSv</span>
-            </div>
-
-            <div className="w-full max-w-[195px] space-y-1.5">
-              <div className="space-y-0.5">
-                <div className="flex items-center justify-between font-mono text-[10px]">
-                  <span className="text-cyan-100/80">{Math.round(stamPct)}%</span>
-                  <span className={stamPct < 25 ? 'text-amber-300' : 'text-cyan-200/85'}>
-                    H₂O / STAM
-                  </span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-cyan-950/70 ring-1 ring-cyan-300/25">
-                  <div
-                    className={`ml-auto h-full transition-all duration-300 ${
-                      stamPct < 25 ? 'bg-amber-400' : 'bg-cyan-300'
-                    }`}
-                    style={{ width: `${stamPct}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Animated ECG Waveform + BPM */}
-              <div className="hidden rounded-lg border border-cyan-300/25 bg-cyan-950/30 px-2 py-1 backdrop-blur-sm sm:block">
-                <svg viewBox="0 0 180 26" className="h-5 w-full overflow-hidden">
-                  <polyline
-                    fill="none"
-                    stroke="rgba(103, 232, 249, 0.9)"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points="0,16 18,16 23,13 27,16 32,16 35,20 39,4 43,23 47,16 54,16 59,13 64,16 86,16 91,13 95,16 100,16 103,20 107,4 111,23 115,16 122,16 127,13 132,16 154,16 159,13 163,16 168,16 171,20 175,4 179,23"
-                  >
-                    <animateTransform
-                      attributeName="transform"
-                      type="translate"
-                      from="0 0"
-                      to="-68 0"
-                      dur={`${(60 / Math.max(50, heartBpm)).toFixed(2)}s`}
-                      repeatCount="indefinite"
-                    />
-                  </polyline>
-                </svg>
-                <div className="mt-0.5 flex items-center justify-between font-mono text-[10px] text-cyan-100/85">
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
-                    {heartBpm} bpm
-                  </span>
-                  <span className="text-[9px] text-cyan-200/60">4.3 PSI</span>
-                </div>
-              </div>
-            </div>
+          <div className="hidden items-center gap-2 sm:flex">
+            <svg viewBox="0 0 180 26" className="h-4 flex-1 overflow-hidden">
+              <polyline
+                fill="none"
+                stroke="#ebe4d4"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+                points="0,16 18,16 23,13 27,16 32,16 35,20 39,4 43,23 47,16 54,16 59,13 64,16 86,16 91,13 95,16 100,16 103,20 107,4 111,23 115,16 122,16 127,13 132,16 154,16 159,13 163,16 168,16 171,20 175,4 179,23"
+              >
+                <animateTransform
+                  attributeName="transform"
+                  type="translate"
+                  from="0 0"
+                  to="-68 0"
+                  dur={`${(60 / Math.max(50, heartBpm)).toFixed(2)}s`}
+                  repeatCount="indefinite"
+                />
+              </polyline>
+            </svg>
+            <span className="num text-[11px] text-bone">{heartBpm} bpm</span>
           </div>
         </div>
       </div>
 
-      {/* CENTER SUBTLE RETICLE & DIEGETIC INTERACTION PROMPT */}
+      {/* Centre: reticle and whatever you can interact with */}
       <div className="relative flex flex-1 items-center justify-center">
         <div className="flex flex-col items-center">
           <div
@@ -677,110 +534,55 @@ export default function VisorHUD() {
               hasInteractFocus ? 'h-9 w-9' : 'h-5 w-5'
             }`}
           >
-            <div
-              className={`h-1 w-1 rounded-full ${
-                nearLander
-                  ? 'bg-amber-400'
-                  : nearRover
-                    ? 'bg-cyan-400'
-                    : activeTarget
-                      ? 'bg-sky-400'
-                      : 'bg-white/60'
-              }`}
-            />
+            <div className={`h-1 w-1 rounded-full ${hasInteractFocus ? 'bg-hivis' : 'bg-bone/70'}`} />
             {hasInteractFocus ? (
               <>
-                <span
-                  className={`absolute top-0 left-0 h-2 w-2 border-t border-l ${
-                    nearLander
-                      ? 'border-amber-400'
-                      : nearRover
-                        ? 'border-cyan-400'
-                        : 'border-sky-400'
-                  }`}
-                />
-                <span
-                  className={`absolute top-0 right-0 h-2 w-2 border-t border-r ${
-                    nearLander
-                      ? 'border-amber-400'
-                      : nearRover
-                        ? 'border-cyan-400'
-                        : 'border-sky-400'
-                  }`}
-                />
-                <span
-                  className={`absolute bottom-0 left-0 h-2 w-2 border-b border-l ${
-                    nearLander
-                      ? 'border-amber-400'
-                      : nearRover
-                        ? 'border-cyan-400'
-                        : 'border-sky-400'
-                  }`}
-                />
-                <span
-                  className={`absolute bottom-0 right-0 h-2 w-2 border-b border-r ${
-                    nearLander
-                      ? 'border-amber-400'
-                      : nearRover
-                        ? 'border-cyan-400'
-                        : 'border-sky-400'
-                  }`}
-                />
+                <span className="absolute top-0 left-0 h-2 w-2 border-t border-l border-hivis" />
+                <span className="absolute top-0 right-0 h-2 w-2 border-t border-r border-hivis" />
+                <span className="absolute bottom-0 left-0 h-2 w-2 border-b border-l border-hivis" />
+                <span className="absolute right-0 bottom-0 h-2 w-2 border-r border-b border-hivis" />
               </>
             ) : (
-              <div className="absolute inset-0 rounded-full border border-white/25" />
+              <div className="absolute inset-0 rounded-full border border-bone/30" />
             )}
           </div>
 
-          {/* Lander Airlock Resupply & Offload Prompt */}
           {nearLander && !scanningState.active && (
-            <button
-              type="button"
-              onClick={resupplyAndOffloadAtLander}
-              className="pointer-events-auto mt-4 flex items-center gap-2 rounded border border-amber-400/60 bg-black/70 px-3 py-1 font-mono text-[11px] tracking-wider text-amber-100 shadow-lg backdrop-blur-md transition hover:border-amber-300 hover:bg-amber-500/25"
-            >
-              <Rocket className="h-3.5 w-3.5 text-amber-300" />
-              <span>[E] RESUPPLY &amp; OFFLOAD</span>
+            <button type="button" onClick={resupplyAndOffloadAtLander} className={PROMPT_CLASS}>
+              <kbd>E</kbd>
+              <span>Resupply and offload cores</span>
             </button>
           )}
 
-          {/* Direct Target Scan / Core Extraction Prompt */}
           {activeTarget && !nearLander && (
             <div className="mt-4 flex flex-col items-center">
               {scanningState.active ? (
-                <div className="w-52 rounded border border-amber-400/50 bg-black/70 px-3 py-1.5 backdrop-blur-md">
-                  <div className="mb-1 flex items-center justify-between font-mono text-[10px] text-amber-200">
-                    <span>DRILLING &amp; CORING...</span>
-                    <span>{Math.round(scanningState.progress)}%</span>
+                <div className="w-56 border border-rule bg-ink/90 px-3 py-2">
+                  <div className="mb-1.5 flex items-baseline justify-between text-[12px] text-bone">
+                    <span>Coring {activeTarget.code}</span>
+                    <span className="num">{Math.round(scanningState.progress)}%</span>
                   </div>
-                  <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full bg-amber-400 transition-all duration-75"
-                      style={{ width: `${scanningState.progress}%` }}
-                    />
+                  <div className="gauge">
+                    <i style={{ width: `${scanningState.progress}%`, transitionDuration: '75ms' }} />
                   </div>
                 </div>
               ) : isActiveCollected ? (
-                <div className="flex items-center gap-1.5 rounded border border-emerald-400/40 bg-black/65 px-2.5 py-1 font-mono text-[10px] tracking-wider text-emerald-300 backdrop-blur-md">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>CORE LOGGED // {activeTarget.code}</span>
+                <div className="on-scene text-[12px] text-ok">
+                  {activeTarget.code} cored and logged
                 </div>
               ) : (
                 <button
                   type="button"
                   onClick={() => startScan(activeTarget.id)}
-                  className="pointer-events-auto flex items-center gap-2 rounded border border-sky-400/55 bg-black/70 px-3 py-1 font-mono text-[11px] tracking-wider text-sky-100 shadow-lg backdrop-blur-md transition hover:border-sky-300 hover:bg-sky-500/25"
+                  className={PROMPT_CLASS.replace('mt-4 ', '')}
                 >
-                  <ScanLine className="h-3.5 w-3.5 text-sky-300" />
-                  <span>
-                    [E] SCAN &amp; CORE · ? ({activeTarget.code})
-                  </span>
+                  <kbd>E</kbd>
+                  <span>Scan and core {activeTarget.code}</span>
                 </button>
               )}
             </div>
           )}
 
-          {/* NASA Rover Telemetry Sync Prompt */}
           {nearRover && !nearLander && !activeTarget && !scanningState.active && rover && (
             <button
               type="button"
@@ -788,30 +590,31 @@ export default function VisorHUD() {
                 discoverRover(site.id);
                 routeToUnexploredFrontier();
               }}
-              className="pointer-events-auto mt-4 flex items-center gap-2 rounded border border-cyan-400/60 bg-black/70 px-3 py-1 font-mono text-[11px] tracking-wider text-cyan-100 shadow-lg backdrop-blur-md transition hover:border-cyan-300 hover:bg-cyan-500/25"
+              className={PROMPT_CLASS}
             >
-              <Navigation className="h-3.5 w-3.5 text-cyan-300" />
-              <span>[E] SYNC ROVER · {rover.shortName}</span>
+              <kbd>E</kbd>
+              <span>Sync with {rover.name}</span>
             </button>
           )}
 
-          {/* Brief Lander Airlock / Status Micro-Toast */}
           {landerStatusMessage && (
-            <div className="mt-2.5 rounded border border-emerald-400/45 bg-black/70 px-2.5 py-1 font-mono text-[10px] tracking-wider text-emerald-200 backdrop-blur-md">
+            <div
+              role="status"
+              className="mt-3 max-w-sm border-l-2 border-bone bg-ink/85 px-3 py-1.5 text-[12px] text-bone"
+            >
               {landerStatusMessage}
             </div>
           )}
         </div>
       </div>
 
-      {/* Interactive Hand-Held / Forearm-Mounted ARES-V Field Slate HUD */}
       <FieldSlateHUD
         site={site}
         activeTarget={activeTarget}
         isActiveCollected={isActiveCollected}
       />
 
-      {/* BOTTOM-LEFT: EVA Command Menu Button (Home Page & Area Switcher) */}
+      {/* Menu button */}
       {!wristMapOpen && !menuOpen && !areaCompleteModalOpen && (
         <button
           type="button"
@@ -825,187 +628,176 @@ export default function VisorHUD() {
             }
             setMenuOpen(true);
           }}
-          className="pointer-events-auto fixed bottom-6 left-6 z-20 flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-slate-950/75 px-3.5 py-2 font-mono text-xs tracking-wider text-cyan-100 shadow-lg backdrop-blur-md transition hover:border-cyan-300/70 hover:bg-slate-900/90"
+          className="btn pointer-events-auto fixed bottom-6 left-6 z-20 bg-ink/85"
         >
-          <Menu className="h-4 w-4 text-cyan-300" />
-          <span>MENU</span>
+          Menu
         </button>
       )}
 
-      {/* EVA COMMAND MENU MODAL: Return to Home Page or Switch Area */}
+      {/* Mission menu */}
       {menuOpen && (
         <div
           onClick={() => setMenuOpen(false)}
-          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-4 backdrop-blur-xs"
+          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-cyan-300/25 bg-slate-950/95 p-5 text-slate-100 shadow-2xl"
-          >
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div onClick={(e) => e.stopPropagation()} className="panel w-full max-w-md p-6 text-bone">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="font-mono text-[10px] tracking-[0.2em] text-cyan-300">
-                  ARES-V // MISSION MENU
-                </div>
-                <h2 className="text-base font-semibold text-white">{site.name}</h2>
+                <div className="label mb-1">Mission menu</div>
+                <h2 className="place text-[22px] leading-tight">{site.name}</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}
                 aria-label="Close menu"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                className="icon-btn -mt-1 -mr-2"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-4 space-y-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  returnToOrbit();
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400"
-              >
-                <Home className="h-4 w-4" />
-                <span>BACK TO HOME PAGE (ORBIT)</span>
-              </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                returnToOrbit();
+              }}
+              className="btn btn-primary mt-5 w-full"
+            >
+              Return to orbit
+            </button>
 
-              <div className="pt-2">
-                <div className="mb-2 font-mono text-[10px] tracking-[0.18em] text-slate-400">
-                  DEPLOY TO OTHER AREAS
-                </div>
-                <div className="space-y-1.5">
-                  {LANDING_ZONES.map((zone) => {
-                    const isCurrent = zone.id === site.id;
-                    const vaultedCount = (vaultedSamples[zone.id] || []).length;
-                    return (
-                      <button
-                        key={zone.id}
-                        type="button"
-                        disabled={isCurrent}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          switchAreaFromEva(zone.id);
-                        }}
-                        className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-xs transition ${
-                          isCurrent
-                            ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200'
-                            : 'border-white/10 bg-white/[0.03] text-slate-200 hover:border-cyan-400/50 hover:bg-white/[0.07]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-3.5 w-3.5 text-cyan-300" />
-                          <div>
-                            <div className="font-semibold">{zone.name}</div>
-                            <div className="text-[10px] text-slate-400">
-                              {zone.nasaRover?.shortName} · {vaultedCount} / {zone.targets.length} Vaulted
-                            </div>
-                          </div>
-                        </div>
-                        <span className="font-mono text-[10px] text-cyan-300">
-                          {isCurrent ? 'ACTIVE' : 'DEPLOY →'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <div className="label mt-6 mb-1">Move to another site</div>
+            <SiteList
+              zones={LANDING_ZONES}
+              currentId={site.id}
+              vaultedSamples={vaultedSamples}
+              onPick={(id) => {
+                setMenuOpen(false);
+                switchAreaFromEva(id);
+              }}
+            />
           </div>
         </div>
       )}
 
-      {/* SECTOR COMPLETE MODAL: Shown after collecting & offloading all area samples */}
+      {/* Site complete */}
       {areaCompleteModalOpen && (
         <div
           onClick={() => setAreaCompleteModalOpen(false)}
-          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg rounded-2xl border border-emerald-400/35 bg-slate-950/95 p-5 text-slate-100 shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+          <div onClick={(e) => e.stopPropagation()} className="panel w-full max-w-md p-6 text-bone">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.2em] text-emerald-300">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>SECTOR COMPLETE // ALL {site.targets.length} / {site.targets.length} CORES VAULTED</span>
+                <div className="label mb-1 text-ok">
+                  Site complete · {site.targets.length} of {site.targets.length} cores vaulted
                 </div>
-                <h2 className="mt-1 text-lg font-semibold text-white">{site.name}</h2>
-                <p className="mt-0.5 text-xs text-slate-300">
-                  All local geological specimens have been scanned and offloaded to the lander vault.
-                </p>
+                <h2 className="place text-[22px] leading-tight">{site.name}</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setAreaCompleteModalOpen(false)}
-                aria-label="Stay in sector"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                aria-label="Stay at this site"
+                className="icon-btn -mt-1 -mr-2"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
+            <p className="mt-3 text-[13px] leading-relaxed text-dim">
+              Every target here has been cored and is in the lander vault. Where to next?
+            </p>
 
-            <div className="mt-4 space-y-2">
-              <div className="font-mono text-[10px] tracking-[0.18em] text-cyan-300">
-                SELECT NEXT LANDING AREA
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                {LANDING_ZONES.filter((z) => z.id !== site.id).map((zone) => {
-                  const vaultedCount = (vaultedSamples[zone.id] || []).length;
-                  return (
-                    <button
-                      key={zone.id}
-                      type="button"
-                      onClick={() => switchAreaFromEva(zone.id)}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-left transition hover:border-cyan-400/55 hover:bg-cyan-500/10"
-                    >
-                      <div>
-                        <div className="text-sm font-semibold text-white">{zone.name}</div>
-                        <div className="text-[11px] text-slate-400">
-                          {zone.nasaRover?.shortName} · {zone.coordinates} · {vaultedCount}/{zone.targets.length} Vaulted
-                        </div>
-                      </div>
-                      <span className="flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2.5 py-1 font-mono text-[10px] font-semibold text-cyan-200">
-                        <Globe2 className="h-3 w-3" />
-                        <span>GO TO AREA</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="mt-4">
+              <SiteList
+                zones={LANDING_ZONES.filter((z) => z.id !== site.id)}
+                currentId={site.id}
+                vaultedSamples={vaultedSamples}
+                onPick={(id) => switchAreaFromEva(id)}
+              />
             </div>
 
-            <div className="mt-4 flex items-center gap-2.5 pt-2">
+            <div className="mt-5 flex gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setAreaCompleteModalOpen(false);
                   returnToOrbit();
                 }}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-cyan-500 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400"
+                className="btn btn-primary flex-1"
               >
-                <Home className="h-4 w-4" />
-                <span>BACK TO HOME PAGE</span>
+                Return to orbit
               </button>
-              <button
-                type="button"
-                onClick={() => setAreaCompleteModalOpen(false)}
-                className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2.5 text-xs font-medium text-slate-200 transition hover:bg-white/10"
-              >
-                STAY HERE
+              <button type="button" onClick={() => setAreaCompleteModalOpen(false)} className="btn">
+                Stay here
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* BOTTOM EDGE: Single-Line Minimalist Hotkey Bar */}
-      <div className="pointer-events-none mx-auto text-center font-mono text-[10px] tracking-[0.14em] text-white/60">
-        [M / TAB] ENLARGED MAP · [1-4] DATA LAYERS · [R] RADAR PULSE · [E] SCAN / INTERACT · [O] HOME
+      {/* Key hints */}
+      <div className="on-scene pointer-events-none mx-auto hidden flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-bone/75 sm:flex">
+        <span><kbd>M</kbd> Map</span>
+        <span><kbd>1</kbd>&ndash;<kbd>4</kbd> Layers</span>
+        <span><kbd>E</kbd> Interact</span>
+        <span><kbd>P</kbd> Route</span>
+        <span><kbd>R</kbd> Radar</span>
+        <span><kbd>F</kbd> Lamp</span>
+        <span><kbd>O</kbd> Orbit</span>
       </div>
     </div>
+  );
+}
+
+const PROMPT_CLASS =
+  'pointer-events-auto mt-4 flex items-center gap-2.5 border border-rule bg-ink/90 px-3 py-1.5 text-[13px] text-bone transition-colors hover:border-bone';
+
+function Gauge({ label, pct, low, lowClass }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between text-[11px]">
+        <span className="text-bone">{label}</span>
+        <span className="num text-bone">{Math.round(pct)}%</span>
+      </div>
+      <div className="gauge">
+        <i className={low ? lowClass : ''} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function SiteList({ zones, currentId, vaultedSamples, onPick }) {
+  return (
+    <ul className="border-b border-rule">
+      {zones.map((zone) => {
+        const isCurrent = zone.id === currentId;
+        const vaulted = (vaultedSamples[zone.id] || []).length;
+        return (
+          <li key={zone.id} className="border-t border-rule">
+            <button
+              type="button"
+              disabled={isCurrent}
+              onClick={() => onPick(zone.id)}
+              className={`group flex w-full items-baseline justify-between gap-4 py-2.5 text-left ${
+                isCurrent ? '' : 'hover:bg-raised'
+              }`}
+            >
+              <span className="min-w-0">
+                <span className={`place block truncate text-[15px] ${isCurrent ? 'text-dim' : 'text-bone'}`}>
+                  {zone.name}
+                </span>
+                <span className="num block text-[11px] text-dim">
+                  {vaulted} of {zone.targets.length} cores vaulted
+                </span>
+              </span>
+              <span className="shrink-0 text-[12px] text-dim group-hover:text-bone">
+                {isCurrent ? 'You are here' : 'Go'}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

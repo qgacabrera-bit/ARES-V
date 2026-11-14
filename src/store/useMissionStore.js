@@ -227,7 +227,7 @@ export const useMissionStore = create((set, get) => ({
         customPinpoint: null,
         abortNotice:
           reason === 'HYPOXIA'
-            ? 'EMERGENCY ORBITAL ABORT: SUIT O₂ DEPLETED — UNVAULTED SAMPLES JETTISONED'
+            ? 'Emergency abort. Your suit ran out of O₂ and you were pulled back to orbit. Any cores not yet in the vault were left behind.'
             : null,
       };
     });
@@ -351,7 +351,7 @@ export const useMissionStore = create((set, get) => ({
         [id]: true,
       },
       landerStatusMessage:
-        '📡 NASA ROVER LOCATED & PINNED ON MAP // UNEXPLORED FRONTIER SECTORS UNLOCKED',
+        'Rover found and pinned on your map. Ground beyond its track is now open to survey.',
     }));
   },
 
@@ -390,7 +390,7 @@ export const useMissionStore = create((set, get) => ({
         targetName: pinpoint.name || 'Map Pinpoint',
         ...route,
       },
-      landerStatusMessage: `📌 PINPOINT LOCKED // ROUTING TO ${pinpoint.name.toUpperCase()} (${route.distanceMeters}m)`,
+      landerStatusMessage: `Route set to ${pinpoint.name}, ${route.distanceMeters} m`,
     }));
   },
 
@@ -445,7 +445,7 @@ export const useMissionStore = create((set, get) => ({
         targetName: goalName,
         ...route,
       },
-      landerStatusMessage: `🧭 PINPOINT LOCKED // ROUTING TO UNEXPLORED MARS FRONTIER (${route.distanceMeters}m)`,
+      landerStatusMessage: `Route set to unexplored ground, ${route.distanceMeters} m`,
     }));
   },
 
@@ -514,7 +514,7 @@ export const useMissionStore = create((set, get) => ({
     const nextMass = targetObj?.massKg || 5.5;
     if (carriedMassKg + nextMass > maxPackMassKg + 0.01) {
       set({
-        landerStatusMessage: 'PACK CAPACITY FULL (25 KG) // OFFLOAD CORES AT LANDER',
+        landerStatusMessage: 'Pack is full at 25 kg. Offload cores at the lander first.',
       });
       return;
     }
@@ -617,18 +617,18 @@ export const useMissionStore = create((set, get) => ({
     const statusParts = [];
     if (offloadedCount > 0) {
       statusParts.push(
-        `VAULTED ${offloadedCount} CORE${offloadedCount > 1 ? 'S' : ''} (${offloadedMass.toFixed(1)} KG)`
+        `vaulted ${offloadedCount} core${offloadedCount > 1 ? 's' : ''} (${offloadedMass.toFixed(1)} kg)`
       );
     }
     if (o2Transfer > 0.5 || heatTransfer > 0.5) {
       statusParts.push(
-        `+O₂ ${Math.round(o2Transfer)}% · +THERM ${Math.round(heatTransfer)}%`
+        `O₂ +${Math.round(o2Transfer)}%, heater +${Math.round(heatTransfer)}%`
       );
     }
     const statusMsg =
       statusParts.length > 0
-        ? `AIRLOCK SYNC // ${statusParts.join(' · ')}`
-        : 'AIRLOCK CONNECTED // SUIT SYSTEMS & VAULT NOMINAL';
+        ? `Airlock: ${statusParts.join(' · ')}`
+        : 'Airlock connected. Nothing to offload, suit is topped up.';
 
     const siteTargetCount = siteId ? LANDING_ZONES_BY_ID[siteId]?.targets?.length || 0 : 0;
     const allSiteSamplesVaulted = siteTargetCount > 0 && nextVault.length >= siteTargetCount;

@@ -104,7 +104,7 @@ export default function App() {
     : 0;
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-black text-white">
+    <main className="relative h-screen w-screen overflow-hidden bg-black text-bone">
       <SceneContainer />
 
       {viewMode === 'ORBIT' ? <OrbitalHUD /> : <VisorHUD />}
@@ -121,10 +121,8 @@ export default function App() {
         }}
       >
         {isTransitioning && (
-          <div className="rounded border border-sky-400/35 bg-black/65 px-5 py-2.5 font-mono text-xs tracking-[0.22em] text-sky-200 backdrop-blur-md">
-            {viewMode === 'ORBIT'
-              ? 'TOUCHDOWN // INITIALIZING EVA VISOR...'
-              : 'ASCENT // SYNCING ORBITAL RECON...'}
+          <div className="text-[14px] text-bone">
+            {viewMode === 'ORBIT' ? 'Touchdown. Sealing suit…' : 'Ascending to orbit…'}
           </div>
         )}
       </div>

@@ -381,22 +381,12 @@ export default function LanderBase({ site, terrainVersion }) {
       {/* Hover-Only Airlock Reserve Readout */}
       {showReserveLabel && (
         <Html position={[0, 3.1, -2.05]} center distanceFactor={10}>
-          <div className="pointer-events-none select-none whitespace-nowrap rounded border border-sky-300/75 bg-slate-950/85 px-2.5 py-1 font-mono text-[10px] tracking-[0.14em] text-slate-100 shadow-lg backdrop-blur-sm">
-            <span className="text-sky-300">ARES-V AIRLOCK // RESUPPLY &amp; OFFLOAD</span>
-            <span className="mx-1.5 text-slate-600">|</span>
-            <span>
-              SHIP O₂:{' '}
-              <strong className="text-cyan-300">
-                {Math.round(landerReserves.oxygenReserve)}%
-              </strong>
-            </span>
-            <span className="mx-1.5 text-slate-600">|</span>
-            <span>
-              VAULT:{' '}
-              <strong className="text-emerald-300">
-                {vaultedList.length}/{totalTargets} CORES
-              </strong>
-            </span>
+          <div className="scene-tag pointer-events-none select-none">
+            <div className="font-bold">Airlock</div>
+            <div className="text-dim">
+              Ship O₂ {Math.round(landerReserves.oxygenReserve)}% · {vaultedList.length} of{' '}
+              {totalTargets} cores in vault
+            </div>
           </div>
         </Html>
       )}

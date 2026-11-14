@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/*
+  Type: B612 is the typeface Airbus commissioned for cockpit displays, so it
+  does the instrument work here. Place names are set in italic serif, the way
+  landforms are lettered on USGS map sheets.
+*/
+@theme {
+  --font-sans: 'B612', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'B612 Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  --color-ink: #0d0c0b;
+  --color-panel: #161412;
+  --color-raised: #201d19;
+  --color-rule: #3a352e;
+  --color-bone: #ebe4d4;
+  --color-dim: #a79f90;
+  --color-faint: #70695e;
+  --color-hivis: #d6f24a;
+  --color-warn: #ffb454;
+  --color-crit: #ff5d4a;
+  --color-ok: #8fd694;
+}
+
 @layer base {
   html,
   body,
@@ -9,29 +32,163 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background-color: #040507;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #050505;
+    color: var(--color-bone);
+    font-family: var(--font-sans);
   }
 
-  .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-hivis);
+    outline-offset: 2px;
   }
 }
 
-/* Subtle visor scanline overlay */
-.visor-scanlines {
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.015) 0px,
-    rgba(255, 255, 255, 0.015) 1px,
-    transparent 1px,
-    transparent 3px
-  );
+@layer components {
+  /* Opaque working surface. No blur, no glow. */
+  .panel {
+    background: var(--color-panel);
+    border: 1px solid var(--color-rule);
+    border-radius: 2px;
+  }
+
+  /* Small heading above a group of readouts. */
+  .label {
+    font-size: 10px;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+  }
+
+  .place {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+  }
+
+  /* B612's figures are already fixed-width, so readouts stay in the sans. */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border: 1px solid var(--color-rule);
+    border-radius: 2px;
+    background: var(--color-raised);
+    color: var(--color-bone);
+    font-size: 13px;
+    line-height: 1.2;
+    transition: background-color 120ms, border-color 120ms, color 120ms;
+  }
+  .btn:hover {
+    border-color: var(--color-dim);
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+
+  .btn-primary {
+    background: var(--color-bone);
+    border-color: var(--color-bone);
+    color: var(--color-ink);
+    font-weight: 700;
+  }
+  .btn-primary:hover {
+    background: #fff;
+    border-color: #fff;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    padding: 6px;
+    border-radius: 2px;
+    color: var(--color-dim);
+  }
+  .icon-btn:hover {
+    background: var(--color-raised);
+    color: var(--color-bone);
+  }
+
+  /* Label / value rows separated by hairlines. */
+  .rows > * {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-top: 1px solid var(--color-rule);
+    font-size: 13px;
+  }
+  .rows > *:last-child {
+    border-bottom: 1px solid var(--color-rule);
+  }
+  .rows dt {
+    color: var(--color-dim);
+  }
+  .rows dd {
+    margin: 0;
+    text-align: right;
+  }
+
+  kbd {
+    display: inline-block;
+    min-width: 1.5em;
+    padding: 1px 5px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    line-height: 1.35;
+    text-align: center;
+    opacity: 0.9;
+  }
+
+  /* Labels pinned to objects in the 3D scene. */
+  .scene-tag {
+    padding: 4px 8px;
+    border: 1px solid var(--color-rule);
+    border-radius: 2px;
+    background: rgba(13, 12, 11, 0.92);
+    color: var(--color-bone);
+    font-size: 11px;
+    line-height: 1.35;
+    white-space: nowrap;
+  }
+
+  /* Symbology drawn straight onto the scene needs its own contrast. */
+  .on-scene {
+    text-shadow: 0 0 3px rgba(0, 0, 0, 0.95), 0 1px 1px rgba(0, 0, 0, 0.8);
+  }
+
+  .gauge {
+    height: 5px;
+    background: rgba(0, 0, 0, 0.55);
+    outline: 1px solid rgba(235, 228, 212, 0.45);
+  }
+  .gauge > i {
+    display: block;
+    height: 100%;
+    background: var(--color-bone);
+    transition: width 300ms;
+  }
 }
 
-/* Subtle radial helmet vignette */
+/* Helmet edge falloff */
 .visor-vignette {
-  box-shadow: inset 0 0 110px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 120px 10px rgba(0, 0, 0, 0.6);
 }
 
 @keyframes pulse-hazard {
@@ -121,15 +278,23 @@
   animation: frost-shimmer 2.8s ease-in-out infinite;
 }
 
-/* Custom minimal scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 9999px;
+  background: var(--color-rule);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hazard-vignette,
+  .animate-hypoxia-tunnel,
+  .animate-heartbeat-throb,
+  .animate-breath-fog,
+  .animate-frost-shimmer {
+    animation: none;
+  }
 }

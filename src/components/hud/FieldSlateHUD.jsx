@@ -1,16 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Camera,
-  Eye,
-  Layers,
-  MapPin,
-  Mountain,
-  Navigation,
-  Radio,
-  ScanLine,
-  Sparkles,
-  X,
-} from 'lucide-react';
+import { X } from 'lucide-react';
 import { EVA_LAYERS } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import { computeSafeTraversePath } from '../../utils/pathfinding';
@@ -29,19 +18,17 @@ const MAP_RANGE = MAP_3X3_RANGE; // 51m half-span => 3x3 chunks (102m x 102m)
 const MAP_SPAN = MAP_3X3_SPAN;
 const MAP_PX = 220;
 
-const LAYER_ICONS = {
-  OPTICAL: Eye,
-  TOPOGRAPHY: Mountain,
-  SPECTRAL: Layers,
-  ENV: Radio,
+const LAYER_SEGMENT_LABELS = {
+  OPTICAL: 'Optical',
+  TOPOGRAPHY: 'Terrain',
+  SPECTRAL: 'Geology',
+  ENV: 'Radiation',
 };
 
-const LAYER_SEGMENT_LABELS = {
-  OPTICAL: 'OPTICAL',
-  TOPOGRAPHY: 'TOPO',
-  SPECTRAL: 'GEOLOGY',
-  ENV: 'RAD/WX',
-};
+const SLATE_TABS = [
+  { id: 'MAP', label: 'Map and route' },
+  { id: 'SPECTRA', label: 'Samples' },
+];
 
 function toSvgCoords(wx, wz, centerX = 0, centerZ = 0) {
   return [
@@ -210,8 +197,8 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
       kind: isCollected
         ? `${fallbackTarget.code} · Cored`
         : fallbackTarget.roverExplored
-          ? `${fallbackTarget.code} · Sample Target`
-          : `${fallbackTarget.code} · Unvisited Target`,
+          ? `${fallbackTarget.code} · Sample target`
+          : `${fallbackTarget.code} · Off the rover track`,
       title: fallbackTarget.name,
       detail: fallbackTarget.mineralReadout,
       position: fallbackTarget.position,
@@ -273,9 +260,9 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
     setMapTooltip(null);
     setSelectedPinpointInfo({
       id: 'custom-pinpoint',
-      kind: isUnexplored ? 'Unexplored Sector' : 'Survey Point',
-      title: isUnexplored ? 'Unexplored Frontier Waypoint' : 'Surface Survey Waypoint',
-      detail: 'Terrain coordinate plotted from orbital elevation mosaic.',
+      kind: isUnexplored ? 'Off the rover track' : 'Survey point',
+      title: isUnexplored ? 'Unexplored ground' : 'Picked point',
+      detail: 'A point you picked on the map.',
       position: [wx, wz],
       isUnexplored,
     });
@@ -293,7 +280,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
     } else {
       setCustomPinpoint({
         id: inspectedItem.id || 'custom-pinpoint',
-        name: inspectedItem.title || 'Survey Waypoint',
+        name: inspectedItem.title || 'Picked point',
         position: inspectedItem.position,
         isUnexplored: Boolean(inspectedItem.isUnexplored),
       });
@@ -316,47 +303,34 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
     const stowedWpLabel = activeRoute
       ? collectedIds.includes(activeRoute.targetId) || activeRoute.targetId === 'lander-base'
         ? activeRoute.targetName
-        : `${site.targets.find((t) => t.id === activeRoute.targetId)?.code || 'WAYPOINT'} · ?`
+        : site.targets.find((t) => t.id === activeRoute.targetId)?.code || 'Waypoint'
       : nextWaypoint
-        ? `${nextWaypoint.target.code} · ?`
-        : 'ALL CORES VAULTED';
+        ? nextWaypoint.target.code
+        : 'All cores vaulted';
 
     return (
-      <div className="pointer-events-none fixed bottom-6 right-6 z-20 flex flex-col items-end gap-2.5">
-        {/* Proximity Verification Card when approaching an uncollected rock target */}
+      <div className="pointer-events-none fixed right-6 bottom-6 z-20 flex flex-col items-end gap-3">
+        {/* Shown when you walk up to a rock you have not scanned */}
         {activeTarget && !isActiveCollected && !nearLander && !scanningState.active && (
-          <div className="pointer-events-auto w-64 rounded-xl border border-white/15 bg-slate-950/85 p-2.5 shadow-2xl backdrop-blur-md sm:w-72">
-            <div className="mb-1.5 flex items-center justify-between text-[10px] font-medium text-cyan-300">
-              <span className="flex items-center gap-1">
-                <Camera className="h-3 w-3" />
-                Specimen Target
-              </span>
-              <span className="text-amber-300">{activeTarget.code}</span>
+          <div className="panel pointer-events-auto w-64 px-3 py-2.5">
+            <div className="flex items-baseline justify-between">
+              <span className="label">Target in range</span>
+              <span className="num text-[11px] text-bone">{activeTarget.code}</span>
             </div>
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-12 w-20 shrink-0 items-center justify-center rounded border border-amber-400/35 bg-slate-900/90 font-mono text-lg font-bold text-amber-300">
-                ?
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-white">
-                  Unscanned Specimen
-                </div>
-                <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-300">
-                  Press [E] to scan &amp; core sample.
-                </div>
-              </div>
-            </div>
+            <p className="mt-1 text-[12px] leading-snug text-bone/90">
+              Not scanned yet. Press <kbd>E</kbd> to scan and core it.
+            </p>
           </div>
         )}
 
-        {/* Bottom-Right Circular Minimap with Crisp 2-Line Waypoint Pill Below */}
+        {/* Minimap. Click or press M to open the slate. */}
         <button
           type="button"
           onClick={() => setWristMapOpen(true)}
-          title="Open ARES-V Field Slate ([M] or [TAB])"
-          className="pointer-events-auto group flex flex-col items-center gap-1.5 text-center font-sans transition"
+          title="Open the field slate (M or Tab)"
+          className="group pointer-events-auto flex flex-col items-center gap-1.5 text-center"
         >
-          <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full border-2 border-cyan-300/45 bg-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.2)] ring-1 ring-cyan-400/20 transition group-hover:border-cyan-300/80 sm:h-36 sm:w-36">
+          <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full border border-bone/70 bg-ink transition-colors group-hover:border-bone sm:h-36 sm:w-36">
             <svg viewBox={`0 0 ${MAP_PX} ${MAP_PX}`} className="h-full w-full">
               <defs>
                 <clipPath id="miniSectorClip">
@@ -389,7 +363,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                 cx={MAP_PX / 2}
                 cy={MAP_PX / 2}
                 r={MAP_PX / 2}
-                fill="#020617"
+                fill="#0d0c0b"
                 opacity="0.06"
               />
 
@@ -406,7 +380,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                       width={sizeSvg}
                       height={sizeSvg}
                       fill="none"
-                      stroke={isCenter ? 'rgba(56,189,248,0.55)' : 'rgba(148,163,184,0.22)'}
+                      stroke={isCenter ? 'rgba(235,228,212,0.4)' : 'rgba(148,163,184,0.22)'}
                       strokeWidth={isCenter ? '1.1' : '0.7'}
                     />
                   );
@@ -416,7 +390,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                   cy={MAP_PX / 2}
                   r={MAP_PX * 0.32}
                   fill="none"
-                  stroke="rgba(125,211,252,0.2)"
+                  stroke="rgba(235,228,212,0.2)"
                   strokeWidth="1"
                   strokeDasharray="4 5"
                 />
@@ -426,8 +400,8 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                 <polyline
                   points={roverPathSvgPts}
                   fill="none"
-                  stroke="#22c55e"
-                  strokeWidth="4.2"
+                  stroke="#ebe4d4"
+                  strokeWidth="3"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity="0.96"
@@ -440,7 +414,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                   return (
                     <polygon
                       points={`${ylx},${yly - 7} ${ylx + 6},${yly} ${ylx},${yly + 7} ${ylx - 6},${yly}`}
-                      fill="#facc15"
+                      fill="#ebe4d4"
                       clipPath="url(#miniSectorClip)"
                     />
                   );
@@ -453,7 +427,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                       cx={rx}
                       cy={ry}
                       r="5.5"
-                      fill="#22d3ee"
+                      fill="#ebe4d4"
                       clipPath="url(#miniSectorClip)"
                     />
                   );
@@ -462,7 +436,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                 <polyline
                   points={routeSvgPts}
                   fill="none"
-                  stroke="#38bdf8"
+                  stroke="#d6f24a"
                   strokeWidth="5"
                   strokeDasharray="8 6"
                   opacity="0.95"
@@ -471,26 +445,24 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
               )}
               <polygon
                 points={`${landerSx},${landerSy - 8} ${landerSx + 7},${landerSy + 6} ${landerSx - 7},${landerSy + 6}`}
-                fill="#38bdf8"
+                fill="#0d0c0b"
+                stroke="#ebe4d4"
+                strokeWidth="2.2"
                 clipPath="url(#miniSectorClip)"
               />
               <g transform={`translate(${playerSx}, ${playerSy}) rotate(${telemetry.heading})`}>
                 <polygon points="0,-13 8,10 0,5 -8,10" fill="#ffffff" />
               </g>
             </svg>
-            <span className="pointer-events-none absolute top-0.5 left-1/2 -translate-x-1/2 font-mono text-[8px] font-bold text-cyan-200/80">
+            <span className="num pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 text-[9px] font-bold text-bone [text-shadow:0_0_2px_#000]">
               N
             </span>
           </div>
 
-          <div className="max-w-[180px] text-center drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
-            <div className="truncate text-[11px] font-semibold leading-tight text-white">
-              {stowedWpLabel}
-            </div>
+          <div className="on-scene max-w-[180px] text-center">
+            <div className="truncate text-[12px] leading-tight text-bone">{stowedWpLabel}</div>
             {stowedWpDist > 0 && (
-              <div className="mt-0.5 truncate font-mono text-[10px] leading-tight text-cyan-200/90">
-                {stowedWpDist}m
-              </div>
+              <div className="num mt-0.5 text-[11px] leading-tight text-hivis">{stowedWpDist} m</div>
             )}
           </div>
         </button>
@@ -505,72 +477,61 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
   return (
     <div
       onClick={() => setWristMapOpen(false)}
-      className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
+      className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-black/55 p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-2xl border border-white/15 bg-slate-950/90 p-5 font-sans text-white shadow-2xl backdrop-blur-xl"
+        className="panel flex max-h-[92vh] w-full max-w-3xl flex-col overflow-y-auto text-bone"
       >
-        {/* Clean Tablet Header */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <h2 className="truncate text-base font-semibold tracking-tight text-white">
-              {site.name}
-            </h2>
-            <span className="hidden shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-medium text-slate-300 sm:inline-flex">
-              {rover?.shortName || site.shortName} · {vaultedIds.length} / {site.targets.length} Vaulted
-            </span>
+        <div className="flex items-start justify-between gap-4 px-5 pt-5">
+          <div className="min-w-0">
+            <div className="label mb-1">
+              Field slate · {vaultedIds.length} of {site.targets.length} cores vaulted
+            </div>
+            <h2 className="place truncate text-[22px] leading-tight">{site.name}</h2>
           </div>
-
           <button
             type="button"
             onClick={() => setWristMapOpen(false)}
             aria-label="Stow field slate"
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+            className="icon-btn -mt-1 -mr-2"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* 2 Clean Tab Switches */}
-        <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
-          {[
-            { id: 'MAP', label: 'MAP / ROUTE', icon: MapPin },
-            { id: 'SPECTRA', label: 'SPECTRA / REF', icon: Sparkles },
-          ].map((tab) => {
-            const Icon = tab.icon;
+        <div role="tablist" className="mt-4 flex gap-6 border-b border-rule px-5 text-[13px]">
+          {SLATE_TABS.map((tab) => {
             const active = (slateTab === 'SPECTRA' ? 'SPECTRA' : 'MAP') === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => setSlateTab(tab.id)}
-                className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition ${
+                className={`-mb-px border-b-2 pb-2 transition-colors ${
                   active
-                    ? 'bg-white/15 text-white shadow-sm'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                    ? 'border-bone text-bone'
+                    : 'border-transparent text-dim hover:text-bone'
                 }`}
               >
-                <Icon className={`h-3.5 w-3.5 ${active ? 'text-cyan-400' : 'text-slate-400'}`} />
-                <span>{tab.label}</span>
+                {tab.label}
               </button>
             );
           })}
         </div>
 
-        {/* TAB 1: MAP / ROUTE (60% Interactive Map + 40% Single Compact Inspector Card) */}
+        {/* Map and route */}
         {slateTab !== 'SPECTRA' && (
-          <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-5">
-            {/* Left (60%): Clean Interactive Map */}
+          <div className="grid grid-cols-1 items-stretch gap-5 p-5 md:grid-cols-5">
             <div className="md:col-span-3">
-              <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950">
-                {/* Hover/Click Pin Tooltip ONLY */}
+              <div className="relative aspect-square w-full overflow-hidden border border-rule bg-ink">
                 {mapTooltip && (
-                  <div className="pointer-events-none absolute top-3 left-3 z-10 max-w-[85%] truncate rounded-lg border border-white/15 bg-slate-950/90 px-2.5 py-1 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+                  <div className="pointer-events-none absolute top-2 left-2 z-10 max-w-[85%] truncate bg-ink px-2 py-1 text-[12px] text-bone">
                     {mapTooltip}
                   </div>
                 )}
-
                 <svg
                   viewBox={`0 0 ${MAP_PX} ${MAP_PX}`}
                   onClick={handleSvgMapClick}
@@ -593,7 +554,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     clipPath="url(#marsSectorClip)"
                     opacity="0.92"
                   />
-                  <rect width={MAP_PX} height={MAP_PX} fill="#020617" opacity="0.08" />
+                  <rect width={MAP_PX} height={MAP_PX} fill="#0d0c0b" opacity="0.08" />
 
                   {sectorHeatmap.dataUrl && (
                     <image
@@ -622,7 +583,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                           width={sizeSvg}
                           height={sizeSvg}
                           fill="none"
-                          stroke={isCenterChunk ? 'rgba(56, 189, 248, 0.35)' : 'rgba(148, 163, 184, 0.14)'}
+                          stroke={isCenterChunk ? 'rgba(235, 228, 212, 0.3)' : 'rgba(148, 163, 184, 0.14)'}
                           strokeDasharray={isCenterChunk ? undefined : '2.5 2.5'}
                           strokeWidth={isCenterChunk ? '0.7' : '0.5'}
                         />
@@ -659,17 +620,17 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                       <polyline
                         points={roverPathSvgPts}
                         fill="none"
-                        stroke="#4ade80"
-                        strokeWidth="5.2"
+                        stroke="#0d0c0b"
+                        strokeWidth="4.2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        opacity="0.3"
+                        opacity="0.65"
                       />
                       <polyline
                         points={roverPathSvgPts}
                         fill="none"
-                        stroke="#22c55e"
-                        strokeWidth="2.2"
+                        stroke="#ebe4d4"
+                        strokeWidth="1.6"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         opacity="0.96"
@@ -682,7 +643,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     <polyline
                       points={masterLoopSvgPtsStr}
                       fill="none"
-                      stroke="#22d3ee"
+                      stroke="#ebe4d4"
                       strokeWidth="0.95"
                       strokeDasharray="4 3"
                       opacity="0.42"
@@ -694,7 +655,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     <polyline
                       points={routeSvgPts}
                       fill="none"
-                      stroke="#38bdf8"
+                      stroke="#d6f24a"
                       strokeWidth="2.3"
                       strokeDasharray="5 3"
                       opacity="0.98"
@@ -715,7 +676,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                           setMapTooltip(`${wp.sol} · ${wp.name}`);
                           setSelectedPinpointInfo({
                             id: wp.id,
-                            kind: `Rover Milestone · ${wp.sol}`,
+                            kind: `Rover stop · ${wp.sol}`,
                             title: wp.name,
                             detail: wp.detail,
                             position: wp.position,
@@ -728,8 +689,8 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                           cx={wxp}
                           cy={wyp}
                           r={isSelected ? 4 : 2.6}
-                          fill={isSelected ? '#fde047' : '#86efac'}
-                          stroke="#022c22"
+                          fill={isSelected ? '#d6f24a' : '#ebe4d4'}
+                          stroke="#0d0c0b"
                           strokeWidth="0.9"
                         />
                       </g>
@@ -750,7 +711,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                             setMapTooltip(rover?.landingName || 'Sol 0 Landing');
                             setSelectedPinpointInfo({
                               id: 'rover-landing-sol0',
-                              kind: 'Sol 0 Touchdown',
+                              kind: 'Rover landing, Sol 0',
                               title: rover?.landingName || 'Sol 0 Landing',
                               detail: rover?.mission || 'Initial surface landing site.',
                               position: roverLandingPos,
@@ -762,14 +723,14 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                             cx={lx0}
                             cy={ly0}
                             r={isSelected ? 7.5 : 5.5}
-                            fill="rgba(250, 204, 21, 0.2)"
-                            stroke="#fde047"
+                            fill="rgba(235, 228, 212, 0.18)"
+                            stroke="#ebe4d4"
                             strokeWidth="1.1"
                           />
                           <polygon
                             points={`${lx0},${ly0 - 4.2} ${lx0 + 4},${ly0} ${lx0},${ly0 + 4.2} ${lx0 - 4},${ly0}`}
-                            fill="#facc15"
-                            stroke="#020617"
+                            fill="#ebe4d4"
+                            stroke="#0d0c0b"
                             strokeWidth="0.8"
                           />
                         </g>
@@ -791,7 +752,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                             setMapTooltip(`${rover.shortName} · Sol ${rover.latestSol}`);
                             setSelectedPinpointInfo({
                               id: rover.id,
-                              kind: `NASA Rover · Sol ${rover.latestSol}`,
+                              kind: `Rover · Sol ${rover.latestSol}`,
                               title: rover.name,
                               detail: rover.keyDiscoveries,
                               position: rover.position,
@@ -803,27 +764,27 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                             cx={rx}
                             cy={ry}
                             r={isSelected ? 8 : 6.2}
-                            fill="rgba(34, 211, 238, 0.22)"
-                            stroke="#22d3ee"
+                            fill="rgba(235, 228, 212, 0.18)"
+                            stroke="#ebe4d4"
                             strokeWidth="1.2"
                           />
-                          <circle cx={rx} cy={ry} r="3.4" fill="#22d3ee" stroke="#020617" strokeWidth="0.8" />
+                          <circle cx={rx} cy={ry} r="3.4" fill="#ebe4d4" stroke="#0d0c0b" strokeWidth="0.8" />
                         </g>
                       );
                     })()}
 
                   {/* Lander Base Pin */}
                   <g
-                    onMouseEnter={() => setMapTooltip('ARES-V Lander Airlock')}
+                    onMouseEnter={() => setMapTooltip('Lander airlock')}
                     onMouseLeave={() => setMapTooltip(null)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setMapTooltip('ARES-V Lander Airlock');
+                      setMapTooltip('Lander airlock');
                       setSelectedPinpointInfo({
                         id: 'lander-base',
-                        kind: 'EVA Lander Base',
-                        title: 'ARES-V Lander Airlock',
-                        detail: 'Base camp airlock for O₂ resupply and core sample vaulting.',
+                        kind: 'Base',
+                        title: 'Lander airlock',
+                        detail: 'Refill O₂ and heater here, and vault the cores you are carrying.',
                         position: [0, 5.95],
                       });
                     }}
@@ -832,9 +793,9 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     <circle cx={landerSx} cy={landerSy} r={6.5} fill="transparent" />
                     <polygon
                       points={`${landerSx},${landerSy - 4.4} ${landerSx + 4.2},${landerSy + 3.4} ${landerSx - 4.2},${landerSy + 3.4}`}
-                      fill="#38bdf8"
-                      stroke="#020617"
-                      strokeWidth="0.9"
+                      fill="#0d0c0b"
+                      stroke="#ebe4d4"
+                      strokeWidth="1.2"
                     />
                   </g>
 
@@ -844,27 +805,27 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     const done = collectedIds.includes(tgt.id);
                     const isSelected = inspectedItem?.id === tgt.id;
                     const isRouted = activeRoute?.targetId === tgt.id;
-                    const fill = done ? '#10b981' : !tgt.roverExplored ? '#c084fc' : '#fbbf24';
+                    const fill = done ? '#8fd694' : !tgt.roverExplored ? '#c084fc' : '#ffb454';
                     return (
                       <g
                         key={tgt.id}
                         onMouseEnter={() =>
-                          setMapTooltip(done ? `${tgt.code} · ${tgt.name}` : `${tgt.code} · ? (Unscanned)`)
+                          setMapTooltip(done ? `${tgt.code} · ${tgt.name}` : `${tgt.code}, not scanned`)
                         }
                         onMouseLeave={() => setMapTooltip(null)}
                         onClick={(e) => {
                           e.stopPropagation();
                           setInspectedTargetId(tgt.id);
-                          setMapTooltip(done ? `${tgt.code} · ${tgt.name}` : `${tgt.code} · ? (Unscanned)`);
+                          setMapTooltip(done ? `${tgt.code} · ${tgt.name}` : `${tgt.code}, not scanned`);
                           setSelectedPinpointInfo({
                             id: tgt.id,
                             kind: done
                               ? `${tgt.code} · Cored`
-                              : `${tgt.code} · ? Unscanned`,
-                            title: done ? tgt.name : '? · Unscanned Specimen',
+                              : `${tgt.code} · Not scanned`,
+                            title: done ? tgt.name : 'Unscanned specimen',
                             detail: done
                               ? tgt.mineralReadout
-                              : 'Plot a safe route and press [E] at the site to scan & identify this specimen.',
+                              : 'Plot a route, walk there and press E to scan it.',
                             position: tgt.position,
                             isUnexplored: !tgt.roverExplored,
                             isTarget: true,
@@ -879,31 +840,18 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                             cy={ty}
                             r={7}
                             fill="none"
-                            stroke={isRouted ? '#38bdf8' : '#ffffff'}
+                            stroke={isRouted ? '#d6f24a' : '#ebe4d4'}
                             strokeWidth="1.1"
                           />
                         )}
                         <circle
                           cx={tx}
                           cy={ty}
-                          r={done ? (isSelected ? 4 : 3.2) : 5.2}
+                          r={done ? (isSelected ? 4 : 3.2) : 4}
                           fill={fill}
-                          stroke="#020617"
+                          stroke="#0d0c0b"
                           strokeWidth="0.9"
                         />
-                        {!done && (
-                          <text
-                            x={tx}
-                            y={ty + 2.4}
-                            textAnchor="middle"
-                            fontSize="7"
-                            fontWeight="700"
-                            fill="#020617"
-                            className="pointer-events-none select-none font-mono"
-                          >
-                            ?
-                          </text>
-                        )}
                       </g>
                     );
                   })}
@@ -936,7 +884,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                         pz
                       );
                       return (
-                        <circle cx={cxp} cy={cyp} r={5.5} fill="none" stroke="#38bdf8" strokeWidth="1.1" />
+                        <circle cx={cxp} cy={cyp} r={5.5} fill="none" stroke="#d6f24a" strokeWidth="1.1" />
                       );
                     })()}
 
@@ -945,80 +893,68 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     <polygon
                       points="0,-5.8 3.6,3.8 0,1.7 -3.6,3.8"
                       fill="#ffffff"
-                      stroke="#0ea5e9"
+                      stroke="#0d0c0b"
                       strokeWidth="0.9"
                     />
                   </g>
                 </svg>
               </div>
+
+              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-dim">
+                <li><span className="text-bone">&#9651;</span> Lander</li>
+                <li><span className="text-bone">&#9670;</span> Rover landing</li>
+                <li><span className="text-bone">&#9679;</span> Rover now</li>
+                <li><span className="text-warn">&#9679;</span> Target</li>
+                <li><span className="text-[#c084fc]">&#9679;</span> Off the rover track</li>
+                <li><span className="text-ok">&#9679;</span> Cored</li>
+                <li><span className="text-hivis">- -</span> Your route</li>
+              </ul>
             </div>
 
-            {/* Right (40%): Single Compact Waypoint Inspector Card */}
-            <div className="md:col-span-2">
-              <div className="flex h-full flex-col justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                      {inspectedItem?.kind || 'Waypoint'}
-                    </span>
-                    <h3 className="text-base font-semibold leading-snug text-white">
-                      {inspectedItem?.title || 'Select a Waypoint'}
-                    </h3>
+            <div className="flex flex-col justify-between gap-5 md:col-span-2">
+              <div>
+                <div className="label">{inspectedItem?.kind || 'Waypoint'}</div>
+                <h3 className="mt-1 text-[17px] leading-snug font-bold text-bone">
+                  {inspectedItem?.title || 'Nothing selected'}
+                </h3>
+                <p className="mt-2 line-clamp-4 text-[13px] leading-relaxed text-dim">
+                  {inspectedItem?.detail || 'Click a pin, or anywhere on the map, to inspect it.'}
+                </p>
+
+                <dl className="rows mt-4">
+                  <div>
+                    <dt>Distance on foot</dt>
+                    <dd>{Math.round(inspectedRoute.distanceMeters)} m</dd>
                   </div>
-
-                  <p className="line-clamp-2 text-xs leading-relaxed text-slate-300">
-                    {inspectedItem?.detail || 'Click any pin or terrain point on the map to inspect.'}
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                      <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                        DISTANCE
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-white">
-                        {Math.round(inspectedRoute.distanceMeters)} m
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                      <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                        MAX SLOPE
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-white">
-                        {inspectedRoute.maxSlopeDeg}°
-                      </div>
-                    </div>
+                  <div>
+                    <dt>Steepest slope</dt>
+                    <dd>{inspectedRoute.maxSlopeDeg}°</dd>
                   </div>
-                </div>
+                </dl>
+              </div>
 
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={handlePlotInspectedRoute}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400 active:scale-[0.99]"
-                  >
-                    <Navigation className="h-3.5 w-3.5" />
-                    <span>{isRouteActiveToInspected ? 'ROUTE ACTIVE' : 'PLOT SAFE ROUTE'}</span>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handlePlotInspectedRoute}
+                  className="btn btn-primary w-full"
+                >
+                  {isRouteActiveToInspected ? 'Route is active' : 'Plot safe route'}
+                </button>
+                {activeRoute && (
+                  <button type="button" onClick={clearActiveRoute} className="btn w-full">
+                    Clear route
                   </button>
-                  {activeRoute && (
-                    <button
-                      type="button"
-                      onClick={clearActiveRoute}
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
-                    >
-                      Clear Route
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* TAB 2: SPECTRA / REF (2x2 Metric Tiles + 1-Line Summary) */}
+        {/* Samples */}
         {slateTab === 'SPECTRA' && spectraTarget && (
-          <div className="flex flex-col gap-4">
-            {/* Compact Target Pills */}
-            <div className="flex flex-wrap gap-1.5">
+          <div className="p-5">
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
               {site.targets.map((tgt) => {
                 const selected = tgt.id === spectraTarget.id;
                 const collected = collectedIds.includes(tgt.id);
@@ -1027,101 +963,77 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                     key={tgt.id}
                     type="button"
                     onClick={() => setInspectedTargetId(tgt.id)}
-                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-                      selected
-                        ? 'border-cyan-400/60 bg-cyan-500/20 text-white'
-                        : collected
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                          : 'border-white/10 bg-white/[0.03] text-slate-400 hover:text-white'
-                    }`}
+                    aria-pressed={selected}
+                    className={`num border-b-2 pb-1 transition-colors ${
+                      selected ? 'border-bone' : 'border-transparent'
+                    } ${collected ? 'text-ok' : selected ? 'text-bone' : 'text-dim hover:text-bone'}`}
                   >
                     {tgt.code}
-                    {!collected ? ' · ?' : ''}
                   </button>
                 );
               })}
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="flex flex-col justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="overflow-hidden rounded-lg border border-white/10">
+            <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div>
+                <div className="overflow-hidden border border-rule">
                   {isSpectraCollected ? (
                     <RoverSpecimenPhoto target={spectraTarget} />
                   ) : (
-                    <div className="flex aspect-[260/140] w-full flex-col items-center justify-center gap-1.5 bg-slate-950/90 text-amber-300">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full border border-amber-300/45 bg-amber-500/10 font-mono text-2xl font-bold">
-                        ?
-                      </span>
-                      <span className="font-mono text-[10px] tracking-wider text-slate-400">
-                        UNSCANNED SPECIMEN
-                      </span>
+                    <div className="flex aspect-[260/140] w-full items-center justify-center bg-ink text-[12px] text-faint">
+                      No image until scanned
                     </div>
                   )}
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-semibold text-white">
-                    {isSpectraCollected ? spectraTarget.name : `${spectraTarget.code} · ? (Unscanned)`}
-                  </h3>
-                  <p className="line-clamp-2 text-xs leading-relaxed text-slate-300">
-                    {isSpectraCollected
-                      ? spectraTarget.mineralReadout
-                      : 'Approach this target in the field and press [E] to scan & log its mineral signature.'}
-                  </p>
-                  {isSpectraVaulted && spectraTarget.discoveryNote && (
-                    <div className="mt-2 rounded-lg border border-emerald-400/25 bg-emerald-500/10 p-2 text-[11px] leading-relaxed text-emerald-100/90">
-                      <span className="font-mono text-[9px] tracking-wider text-emerald-300">
-                        DISCOVERY NOTE ·{' '}
-                      </span>
-                      {spectraTarget.discoveryNote}
-                    </div>
-                  )}
-                </div>
+                <h3 className="mt-3 text-[17px] leading-snug font-bold text-bone">
+                  {isSpectraCollected ? spectraTarget.name : `${spectraTarget.code}, not scanned`}
+                </h3>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-dim">
+                  {isSpectraCollected
+                    ? spectraTarget.mineralReadout
+                    : 'Walk up to this target and press E to scan it and log its mineral signature.'}
+                </p>
+                {isSpectraVaulted && spectraTarget.discoveryNote && (
+                  <div className="mt-3 border-l-2 border-ok pl-3 text-[12px] leading-relaxed text-bone/90">
+                    <div className="label mb-0.5">Discovery note</div>
+                    {spectraTarget.discoveryNote}
+                  </div>
+                )}
               </div>
 
-              <div className="flex flex-col justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                      MINERAL
-                    </div>
-                    <div className="mt-1 truncate text-sm font-semibold capitalize text-white">
-                      {isSpectraCollected ? spectraTarget.dominantMineral || 'Silicate' : '?'}
-                    </div>
+              <div className="flex flex-col justify-between gap-5">
+                <dl className="rows">
+                  <div>
+                    <dt>Dominant mineral</dt>
+                    <dd className="capitalize">
+                      {isSpectraCollected ? spectraTarget.dominantMineral || 'Silicate' : '—'}
+                    </dd>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                      STATUS
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-white">
-                      {isSpectraCollected ? 'Cored' : '?'}
-                    </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>
+                      {isSpectraVaulted ? 'In the vault' : isSpectraCollected ? 'Cored' : 'Not scanned'}
+                    </dd>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                      CORE MASS
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-white">
-                      {isSpectraCollected ? `${(spectraTarget.massKg ?? 5.5).toFixed(1)} kg` : '?'}
-                    </div>
+                  <div>
+                    <dt>Core mass</dt>
+                    <dd>
+                      {isSpectraCollected ? `${(spectraTarget.massKg ?? 5.5).toFixed(1)} kg` : '—'}
+                    </dd>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                      RANGE
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-white">
-                      {spectraTargetDist.toFixed(1)} m
-                    </div>
+                  <div>
+                    <dt>Distance</dt>
+                    <dd>{spectraTargetDist.toFixed(1)} m</dd>
                   </div>
-                </div>
+                </dl>
 
                 {spectraTargetDist <= 4.0 && !isSpectraCollected ? (
                   <button
                     type="button"
                     onClick={() => startScan(spectraTarget.id)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400"
+                    className="btn btn-primary w-full"
                   >
-                    <ScanLine className="h-4 w-4" />
-                    <span>SCAN &amp; CORE SPECIMEN</span>
+                    Scan and core
                   </button>
                 ) : (
                   <button
@@ -1140,10 +1052,9 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                       setSelectedPinpointInfo(null);
                       setSlateTab('MAP');
                     }}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400"
+                    className="btn btn-primary w-full"
                   >
-                    <Navigation className="h-4 w-4" />
-                    <span>PLOT SAFE ROUTE</span>
+                    Plot safe route
                   </button>
                 )}
               </div>
@@ -1151,10 +1062,9 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
           </div>
         )}
 
-        {/* Bottom Compact Segmented Control Bar: 4 Layer Switches */}
-        <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/10 bg-slate-900/80 p-1">
-          {EVA_LAYERS.map((layer) => {
-            const Icon = LAYER_ICONS[layer.id];
+        {/* Data layer switch */}
+        <div className="mt-auto flex border-t border-rule">
+          {EVA_LAYERS.map((layer, idx) => {
             const active = evaLayer === layer.id;
             const label = LAYER_SEGMENT_LABELS[layer.id] || layer.shortLabel;
             return (
@@ -1162,16 +1072,14 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
                 key={layer.id}
                 type="button"
                 onClick={() => setEvaLayer(layer.id)}
-                className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-medium tracking-wider transition ${
-                  active
-                    ? 'bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-400/50'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
-                }`}
+                aria-pressed={active}
+                title={layer.description}
+                className={`flex flex-1 items-center justify-center gap-2 px-2 py-2.5 text-[12px] transition-colors ${
+                  idx > 0 ? 'border-l border-rule' : ''
+                } ${active ? 'bg-bone text-ink' : 'text-dim hover:bg-raised hover:text-bone'}`}
               >
-                <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-cyan-300' : 'text-slate-400'}`} />
-                <span className="truncate">
-                  [{layer.key}] {label}
-                </span>
+                <kbd>{layer.key}</kbd>
+                <span className="truncate">{label}</span>
               </button>
             );
           })}

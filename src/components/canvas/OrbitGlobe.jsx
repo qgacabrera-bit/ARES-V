@@ -321,14 +321,10 @@ function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployP
       {/* Actual NASA Rover Label shown on hover or selection */}
       {(isHovered || (isSelected && !isDeployingTarget)) && (
         <Html position={[0, 0.28, 0]} center style={{ pointerEvents: 'none' }}>
-          <div className="whitespace-nowrap rounded border border-white/25 bg-black/85 px-2.5 py-1 font-mono text-[10px] tracking-wider text-white shadow-lg backdrop-blur-md">
-            <div>
-              <span className={isSelected ? 'text-sky-400' : 'text-amber-300'}>●</span>{' '}
-              <span className="font-semibold">{rover?.name || site.shortName}</span>{' '}
-              <span className="text-cyan-300">({rover?.code})</span>
-            </div>
-            <div className="text-[8.5px] text-white/65">
-              {site.name} · {rover?.landingCoordinates || site.coordinates} · {rover?.totalOdometryKm} KM
+          <div className="scene-tag">
+            <div className="place text-[14px]">{site.name}</div>
+            <div className="text-dim">
+              {rover?.name || site.shortName} · {rover?.landingCoordinates || site.coordinates}
             </div>
           </div>
         </Html>

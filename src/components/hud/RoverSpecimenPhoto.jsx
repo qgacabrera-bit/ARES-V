@@ -144,7 +144,7 @@ function SublimatingIceSvg({ gradId }) {
       {/* Soil clumps & scoop tines */}
       <circle cx="48" cy="94" r="6" fill="#512517" />
       <circle cx="210" cy="40" r="5" fill="#6d3421" />
-      <path d="M188,24 L208,34 M194,20 L214,30 M200,16 L220,26" stroke="#38bdf8" strokeWidth="1" opacity="0.45" />
+      <path d="M188,24 L208,34 M194,20 L214,30 M200,16 L220,26" stroke="#ebe4d4" strokeWidth="1" opacity="0.45" />
     </>
   );
 }
@@ -265,7 +265,7 @@ export default function RoverSpecimenPhoto({ target, compact = false }) {
 
   return (
     <div
-      className={`relative overflow-hidden rounded border border-sky-400/35 bg-black/80 ${
+      className={`relative overflow-hidden bg-ink ${
         compact ? 'h-12 w-20 shrink-0' : 'aspect-[260/140] w-full'
       }`}
     >
@@ -295,8 +295,8 @@ export default function RoverSpecimenPhoto({ target, compact = false }) {
         preserveAspectRatio="none"
         aria-hidden="true"
       >
-        <line x1="130" y1="58" x2="130" y2="82" stroke="#38bdf8" strokeWidth="0.9" opacity="0.55" />
-        <line x1="118" y1="70" x2="142" y2="70" stroke="#38bdf8" strokeWidth="0.9" opacity="0.55" />
+        <line x1="130" y1="58" x2="130" y2="82" stroke="#ebe4d4" strokeWidth="0.9" opacity="0.55" />
+        <line x1="118" y1="70" x2="142" y2="70" stroke="#ebe4d4" strokeWidth="0.9" opacity="0.55" />
         {!compact && (
           <>
             <path d="M12,20 L12,12 L20,12" stroke="#ffffff" strokeWidth="1.2" fill="none" opacity="0.65" />
@@ -308,8 +308,8 @@ export default function RoverSpecimenPhoto({ target, compact = false }) {
       </svg>
 
       {!compact && (
-        <div className="absolute top-1.5 left-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[8.5px] tracking-wider text-sky-300 backdrop-blur-xs">
-          NASA / JPL ROVER IMAGERY
+        <div className="absolute bottom-0 left-0 bg-ink/80 px-1.5 py-0.5 text-[10px] text-dim">
+          Image: NASA/JPL-Caltech
         </div>
       )}
     </div>

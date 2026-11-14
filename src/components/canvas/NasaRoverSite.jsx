@@ -99,9 +99,9 @@ export default function NasaRoverSite({ site, terrainVersion }) {
           </mesh>
           {showLandingLabel && (
             <Html position={[0, 1.35, 0]} center distanceFactor={16}>
-              <div className="pointer-events-none whitespace-nowrap rounded border border-yellow-300/80 bg-black/85 px-2.5 py-1 font-mono text-[10px] tracking-wider text-yellow-100 shadow-lg backdrop-blur-md">
-                <div>★ {rover.landingName || 'ROVER LANDING (SOL 0)'}</div>
-                <div className="text-[8.5px] text-yellow-200/75">
+              <div className="scene-tag pointer-events-none">
+                <div className="font-bold">{rover.landingName || 'Rover landing, Sol 0'}</div>
+                <div className="text-dim">
                   {rover.landingCoordinates} · {rover.landingDate}
                 </div>
               </div>
@@ -243,13 +243,11 @@ export default function NasaRoverSite({ site, terrainVersion }) {
 
         {showRoverLabel && (
           <Html position={[0, 2.35, 0]} center distanceFactor={16}>
-            <div className="pointer-events-none whitespace-nowrap rounded border border-sky-300/80 bg-black/85 px-2.5 py-1 font-mono text-[10px] tracking-wider text-sky-100 shadow-lg backdrop-blur-md">
-              <div className="font-semibold text-cyan-300">
-                {rover.name} ({rover.code})
-              </div>
-              <div className="text-[8.5px] text-white/75">
-                ODO: {rover.totalOdometryKm} KM · SOL {rover.latestSol} ·{' '}
-                {isDiscovered ? 'MAP SYNCED' : 'HOVER SYNCED'}
+            <div className="scene-tag pointer-events-none">
+              <div className="font-bold">{rover.name}</div>
+              <div className="text-dim">
+                {rover.totalOdometryKm} km driven · Sol {rover.latestSol}
+                {isDiscovered ? ' · on your map' : ''}
               </div>
             </div>
           </Html>
