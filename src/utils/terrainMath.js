@@ -1,10 +1,46 @@
 import * as THREE from 'three';
 
 export const TERRAIN_SIZE = 220;
+export const CHUNK_SIZE = 34;
+export const CHUNK_HALF = CHUNK_SIZE * 0.5;
+export const MAP_3X3_SPAN = CHUNK_SIZE * 3; // 102m (3x3 chunks)
+export const MAP_3X3_RANGE = MAP_3X3_SPAN * 0.5; // 51m
+const CHUNK_CACHE_RES = 65; // 64 segments -> exact shared border vertices
 const PROCEDURAL_GRID_RES = 256;
 const DEFAULT_ELEVATION_SCALE_METERS = 22.0;
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
+
+export function worldToChunk(wx, wz) {
+  return [Math.round(wx / CHUNK_SIZE), Math.round(wz / CHUNK_SIZE)];
+}
+
+export function getChunkBounds(cx, cz) {
+  const centerX = cx * CHUNK_SIZE;
+  const centerZ = cz * CHUNK_SIZE;
+  return {
+    cx,
+    cz,
+    key: `${cx},${cz}`,
+    centerX,
+    centerZ,
+    minX: centerX - CHUNK_HALF,
+    maxX: centerX + CHUNK_HALF,
+    minZ: centerZ - CHUNK_HALF,
+    maxZ: centerZ + CHUNK_HALF,
+  };
+}
+
+export function getActive3x3Chunks(wx, wz) {
+  const [ccx, ccz] = worldToChunk(wx, wz);
+  const chunks = [];
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      chunks.push(getChunkBounds(ccx + dx, ccz + dz));
+    }
+  }
+  return chunks;
+}
 
 // Deterministic noise & planetary/terrain math for ARES-V
 
@@ -94,6 +130,42 @@ function craterContribution(x, z, craterDensity = 1.0) {
   return h;
 }
 
+function proceduralCellCraters(x, z, craterDensity = 1.0, seed = 17.3) {
+  const cellSize = 36;
+  const gcx = Math.floor(x / cellSize);
+  const gcz = Math.floor(z / cellSize);
+  let h = 0;
+
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const ix = gcx + dx;
+      const iz = gcz + dz;
+      // Skip immediate origin cell where CRATER_SEEDS already shapes local terrain
+      if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) continue;
+
+      const p = hash2D(ix, iz, seed + 13.7);
+      if (p > 0.44 * Math.min(1.4, craterDensity)) continue;
+
+      const cx = (ix + 0.2 + 0.6 * hash2D(ix, iz, seed + 41.2)) * cellSize;
+      const cz = (iz + 0.2 + 0.6 * hash2D(ix, iz, seed + 79.4)) * cellSize;
+      const r = 6.5 + hash2D(ix, iz, seed + 105.9) * 9.5;
+      const depth = 1.1 + (r / 16.0) * 1.9;
+
+      const d = Math.hypot(x - cx, z - cz);
+      const norm = d / r;
+      if (norm < 1.55) {
+        if (norm < 1.0) {
+          h += (norm * norm - 1.0) * depth * craterDensity;
+        } else {
+          const t = (norm - 1.0) / 0.55;
+          h += Math.exp(-t * t * 4.5) * depth * 0.28 * craterDensity;
+        }
+      }
+    }
+  }
+  return h;
+}
+
 /**
  * Multi-octave ridged/crater procedural terrain height fallback at world (x, z).
  */
@@ -115,8 +187,10 @@ export function computeProceduralHeight(x, z, siteProfile) {
 
   const distFromSpawn = Math.sqrt(x * x + z * z);
   const distFromLander = Math.sqrt(x * x + (z - 8) * (z - 8));
-  const rimRise = Math.max(0, (distFromSpawn - 38) * 0.14) * roughness;
-  const craters = craterContribution(x, z, craterDensity);
+  const rimRise = Math.min(4.8, Math.max(0, (distFromSpawn - 38) * 0.12)) * roughness;
+  const craters =
+    craterContribution(x, z, craterDensity) +
+    proceduralCellCraters(x, z, craterDensity, seed);
 
   const total = terraced + craters + rimRise;
 
@@ -278,18 +352,11 @@ export async function loadHiRiseTerrainAssets(zoneId, siteProfile) {
   }
 }
 
-/**
- * Bilinear interpolation lookup inside the active HiRISE or procedural Float32Array grid.
- */
-export function getTerrainHeightAt(x, z, siteProfile) {
-  const expectedSeed = siteProfile?.seed;
-  if (!activeHeightmap || (expectedSeed !== undefined && activeHeightmap.seed !== expectedSeed)) {
-    activeHeightmap = buildProceduralHeightGrid('active', siteProfile);
-  }
+const chunkHeightCache = new Map();
 
+function sampleHiRiseGridAt(x, z) {
   const { width, height, grid } = activeHeightmap;
   const half = TERRAIN_SIZE * 0.5;
-
   const u = Math.min(1, Math.max(0, (x + half) / TERRAIN_SIZE));
   const v = Math.min(1, Math.max(0, (z + half) / TERRAIN_SIZE));
 
@@ -308,6 +375,78 @@ export function getTerrainHeightAt(x, z, siteProfile) {
   const h10 = grid[z0 * width + x1];
   const h01 = grid[z1 * width + x0];
   const h11 = grid[z1 * width + x1];
+
+  const h0 = h00 + (h10 - h00) * tx;
+  const h1 = h01 + (h11 - h01) * tx;
+  return h0 + (h1 - h0) * tz;
+}
+
+function getOrBuildChunkHeightGrid(cx, cz, siteProfile) {
+  const seed = siteProfile?.seed ?? 17.3;
+  const modeTag = activeHeightmap?.mode === 'HIRISE' && activeHeightmap?.seed === seed ? 'H' : 'P';
+  const cacheKey = `${seed}:${modeTag}:${cx},${cz}`;
+  if (chunkHeightCache.has(cacheKey)) {
+    return chunkHeightCache.get(cacheKey);
+  }
+
+  const res = CHUNK_CACHE_RES;
+  const grid = new Float32Array(res * res);
+  const bounds = getChunkBounds(cx, cz);
+  const half = TERRAIN_SIZE * 0.5;
+
+  for (let row = 0; row < res; row++) {
+    const wz = bounds.minZ + (row / (res - 1)) * CHUNK_SIZE;
+    for (let col = 0; col < res; col++) {
+      const wx = bounds.minX + (col / (res - 1)) * CHUNK_SIZE;
+      const procH = computeProceduralHeight(wx, wz, siteProfile);
+
+      if (modeTag === 'H' && Math.abs(wx) <= half && Math.abs(wz) <= half) {
+        const hiriseH = sampleHiRiseGridAt(wx, wz);
+        const edgeDist = Math.max(Math.abs(wx), Math.abs(wz));
+        const blend = edgeDist <= 90 ? 0 : Math.min(1, (edgeDist - 90) / (half - 90));
+        grid[row * res + col] = hiriseH + (procH - hiriseH) * blend;
+      } else {
+        grid[row * res + col] = procH;
+      }
+    }
+  }
+
+  chunkHeightCache.set(cacheKey, grid);
+  return grid;
+}
+
+/**
+ * Bilinear interpolation lookup inside the cached 34m chunk grid (works seamlessly across infinite chunks).
+ */
+export function getTerrainHeightAt(x, z, siteProfile) {
+  const expectedSeed = siteProfile?.seed;
+  if (!activeHeightmap || (expectedSeed !== undefined && activeHeightmap.seed !== expectedSeed)) {
+    activeHeightmap = buildProceduralHeightGrid('active', siteProfile);
+  }
+
+  const [cx, cz] = worldToChunk(x, z);
+  const bounds = getChunkBounds(cx, cz);
+  const grid = getOrBuildChunkHeightGrid(cx, cz, siteProfile);
+  const res = CHUNK_CACHE_RES;
+
+  const u = Math.min(1, Math.max(0, (x - bounds.minX) / CHUNK_SIZE));
+  const v = Math.min(1, Math.max(0, (z - bounds.minZ) / CHUNK_SIZE));
+
+  const gx = u * (res - 1);
+  const gz = v * (res - 1);
+
+  const x0 = Math.floor(gx);
+  const z0 = Math.floor(gz);
+  const x1 = Math.min(res - 1, x0 + 1);
+  const z1 = Math.min(res - 1, z0 + 1);
+
+  const tx = gx - x0;
+  const tz = gz - z0;
+
+  const h00 = grid[z0 * res + x0];
+  const h10 = grid[z0 * res + x1];
+  const h01 = grid[z1 * res + x0];
+  const h11 = grid[z1 * res + x1];
 
   const h0 = h00 + (h10 - h00) * tx;
   const h1 = h01 + (h11 - h01) * tx;

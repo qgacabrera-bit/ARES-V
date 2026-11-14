@@ -33,6 +33,7 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
   const velocityRef = useRef({ x: 0, z: 0 });
   const abortTriggeredRef = useRef(false);
   const exhaustedLockRef = useRef(false);
+  const lastHoverTriggerRef = useRef({ landerAt: 0, scanTargetId: null, scanAt: 0 });
 
   const activeTargetId = useMissionStore((s) => s.activeTargetId);
   const wristMapOpen = useMissionStore((s) => s.wristMapOpen);
@@ -92,7 +93,7 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
       dragLookRef.current.moved += Math.abs(dx) + Math.abs(dy);
 
       const { carriedMassKg: massKg, maxPackMassKg: maxMass } = useMissionStore.getState();
-      const lookLoadPenalty = 1.0 - Math.min(1, massKg / (maxMass || 25)) * 0.28;
+      const lookLoadPenalty = 1.0 - Math.min(1, massKg / (maxMass || 25)) * 0.08;
 
       camera.rotation.order = 'YXZ';
       camera.rotation.y -= dx * 0.0042 * lookLoadPenalty;
@@ -151,6 +152,8 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
   }, [camera, gl.domElement, updateTelemetry]);
 
   const forwardVec = useMemo(() => new THREE.Vector3(), []);
+  const lookDirVec = useMemo(() => new THREE.Vector3(), []);
+  const toObjVec = useMemo(() => new THREE.Vector3(), []);
   const rightVec = useMemo(() => new THREE.Vector3(), []);
   const moveVec = useMemo(() => new THREE.Vector3(), []);
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
@@ -167,8 +170,8 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
     const loadRatio = Math.min(1, packMassKg / packMaxKg);
     const physio = storeState.physiology;
 
-    // ArrowLeft/ArrowRight yaw turn fallback (heavier pack dampens turn speed)
-    const turnRate = 1.65 * (1.0 - loadRatio * 0.35);
+    // ArrowLeft/ArrowRight yaw turn fallback (minimized load dampening)
+    const turnRate = 1.65 * (1.0 - loadRatio * 0.1);
     if (keys['ArrowLeft']) {
       camera.rotation.order = 'YXZ';
       camera.rotation.y += turnRate * dt;
@@ -179,7 +182,8 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
     }
 
     // WASD + ArrowUp/Down horizontal walk
-    camera.getWorldDirection(forwardVec);
+    camera.getWorldDirection(lookDirVec);
+    forwardVec.copy(lookDirVec);
     forwardVec.y = 0;
     if (forwardVec.lengthSq() > 0.0001) forwardVec.normalize();
     rightVec.crossVectors(forwardVec, worldUp).normalize();
@@ -195,16 +199,14 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
 
     const isMoving = moveVec.lengthSq() > 0;
     const wantSprint = Boolean(keys['ShiftLeft'] || keys['ShiftRight']);
-    const isOverburdenedSprintLock = loadRatio >= 0.78;
     const canSprint =
       isMoving &&
       wantSprint &&
       !exhaustedLockRef.current &&
-      physio.stamina > 1.5 &&
-      !isOverburdenedSprintLock;
-    const coldSpeedFactor = physio.bodyTempC < 35.8 ? 0.88 : 1.0;
-    const massWalkFactor = 1.0 - Math.pow(loadRatio, 1.1) * 0.58;
-    const massSprintFactor = 1.0 - Math.pow(loadRatio, 1.05) * 0.66;
+      physio.stamina > 1.5;
+    const coldSpeedFactor = physio.bodyTempC < 35.8 ? 0.96 : 1.0;
+    const massWalkFactor = 1.0 - Math.pow(loadRatio, 1.1) * 0.18;
+    const massSprintFactor = 1.0 - Math.pow(loadRatio, 1.05) * 0.22;
     const encumbranceSpeedFactor = (canSprint ? massSprintFactor : massWalkFactor) * coldSpeedFactor;
 
     let targetVx = 0;
@@ -217,8 +219,8 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
       targetVz = moveVec.z * targetSpeed;
     }
 
-    // Horizontal momentum inertia: heavier pack takes longer to get moving and coast to a stop
-    const inertiaLerp = Math.min(1, dt * (12.0 - loadRatio * 8.2));
+    // Snappy horizontal movement with minimized pack inertia
+    const inertiaLerp = Math.min(1, dt * (12.0 - loadRatio * 2.5));
     velocityRef.current.x = THREE.MathUtils.lerp(velocityRef.current.x, targetVx, inertiaLerp);
     velocityRef.current.z = THREE.MathUtils.lerp(velocityRef.current.z, targetVz, inertiaLerp);
 
@@ -228,13 +230,13 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
     if (actualSpeed > 0.01) {
       camera.position.x = THREE.MathUtils.clamp(
         camera.position.x + velocityRef.current.x * dt,
-        -88,
-        88
+        -510,
+        510
       );
       camera.position.z = THREE.MathUtils.clamp(
         camera.position.z + velocityRef.current.z * dt,
-        -88,
-        88
+        -510,
+        510
       );
     }
 
@@ -267,37 +269,43 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
         camera.position.z = roverPos[1] + rDz * pushScale;
       }
       storeState.setRoverProximity(roverDist <= 5.0, roverDist);
-      if (roverDist <= 11.0 && !storeState.discoveredRovers[site.id]) {
+      const roverY = getTerrainHeightAt(roverPos[0], roverPos[1], site.terrainProfile);
+      toObjVec
+        .set(roverPos[0] - camera.position.x, roverY + 1.1 - camera.position.y, roverPos[1] - camera.position.z)
+        .normalize();
+      const roverLookDot = lookDirVec.dot(toObjVec);
+      if (
+        (roverDist <= 11.0 || (roverDist <= 12.0 && roverLookDot > 0.92)) &&
+        !storeState.discoveredRovers[site.id]
+      ) {
         storeState.discoverRover(site.id);
+        storeState.routeToUnexploredFrontier();
       }
     }
 
-    // Physiological & encumbrance camera feedback: lumbering roll, crouch, breath heave, shiver, & hypoxia
+    // Minimized physiological & encumbrance camera feedback
     const exhaustionIntensity = physio.stamina < 30 ? (30 - physio.stamina) / 30 : 0;
     const shiverIntensity = physio.bodyTempC < 36.0 ? Math.min(1, (36.0 - physio.bodyTempC) / 1.2) : 0;
     const hypoxiaIntensity = physio.oxygen < 26 ? (26 - physio.oxygen) / 26 : 0;
 
-    const breathHeave = Math.sin(elapsedT * 4.2) * 0.024 * exhaustionIntensity;
-    const shiverJitter = Math.sin(elapsedT * 38.0) * 0.0045 * shiverIntensity;
+    const breathHeave = Math.sin(elapsedT * 4.2) * 0.004 * exhaustionIntensity;
+    const shiverJitter = Math.sin(elapsedT * 38.0) * 0.0008 * shiverIntensity;
     const lumberRoll = isTrudging
-      ? Math.sin(headBobPhaseRef.current) * (0.005 + loadRatio * 0.044)
+      ? Math.sin(headBobPhaseRef.current) * (0.002 + loadRatio * 0.008)
       : 0;
 
     camera.rotation.order = 'YXZ';
     const targetRoll =
-      lumberRoll + (hypoxiaIntensity > 0 ? Math.sin(elapsedT * 2.1) * 0.032 * hypoxiaIntensity : 0);
+      lumberRoll + (hypoxiaIntensity > 0 ? Math.sin(elapsedT * 2.1) * 0.006 * hypoxiaIntensity : 0);
     camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, targetRoll, Math.min(1, dt * 8));
 
-    // Bilinear HiRISE / procedural terrain height clamping (+1.75m eye height - load crouch + heavy step thud)
+    // Bilinear HiRISE / procedural terrain height clamping (+1.75m eye height, minimized load crouch)
     const groundY = getTerrainHeightAt(camera.position.x, camera.position.z, site.terrainProfile);
-    const loadCrouchOffset = -loadRatio * 0.14;
-    const stepSin = Math.sin(headBobPhaseRef.current);
-    const bobAmp = isTrudging ? (canSprint ? 0.05 : 0.026) + loadRatio * 0.058 : 0.004;
-    const lightStep = Math.cos(headBobPhaseRef.current * 2) * bobAmp;
-    const heavyStep = (0.35 - Math.pow(Math.abs(stepSin), 1.85)) * bobAmp;
+    const loadCrouchOffset = -loadRatio * 0.025;
+    const bobAmp = isTrudging ? (canSprint ? 0.022 : 0.012) + loadRatio * 0.012 : 0.003;
     const stepVertical = isTrudging
-      ? THREE.MathUtils.lerp(lightStep, heavyStep, Math.min(1, loadRatio * 1.4))
-      : Math.sin(elapsedT * 1.6) * 0.004;
+      ? Math.cos(headBobPhaseRef.current * 2) * bobAmp
+      : Math.sin(elapsedT * 1.6) * 0.003;
     const bobOffset = loadCrouchOffset + stepVertical + breathHeave + shiverJitter;
     const targetCamY = groundY + EYE_HEIGHT + bobOffset;
     camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, Math.min(1, dt * 16));
@@ -313,31 +321,78 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
       }
     }
 
-    // Closest geological sample target within 4.0m
+    // Closest geological sample target by reticle gaze hover (within 14m, dot > 0.94) OR proximity (4.0m)
     let closestId = null;
     let closestDist = Infinity;
+    let bestGazeScore = -Infinity;
     const distMap = {};
+    const collectedIds = storeState.collectedSamples[site.id] || [];
+
     for (let i = 0; i < site.targets.length; i++) {
       const tgt = site.targets[i];
-      const dx = camera.position.x - tgt.position[0];
-      const dz = camera.position.z - tgt.position[1];
+      const dx = tgt.position[0] - camera.position.x;
+      const dz = tgt.position[1] - camera.position.z;
       const d = Math.sqrt(dx * dx + dz * dz);
       distMap[tgt.id] = d;
-      if (d <= 4.0 && d < closestDist) {
-        closestDist = d;
-        closestId = tgt.id;
+
+      const tgtY = getTerrainHeightAt(tgt.position[0], tgt.position[1], site.terrainProfile) + 0.95;
+      toObjVec.set(dx, tgtY - camera.position.y, dz).normalize();
+      const dot = lookDirVec.dot(toObjVec);
+
+      const isGazeHover = d <= 14.0 && dot > 0.94;
+      const isCloseHover = d <= 4.0;
+      if (isGazeHover || isCloseHover) {
+        const score = isGazeHover ? dot * 2.0 - d * 0.02 : 1.0 - d * 0.1;
+        if (score > bestGazeScore) {
+          bestGazeScore = score;
+          closestId = tgt.id;
+          closestDist = d;
+        }
       }
     }
+
     if (closestId !== activeTargetId) {
       setActiveTarget(closestId);
     }
+    if (closestId) {
+      if (storeState.observedTargetId !== closestId) {
+        storeState.observeTarget(closestId);
+      }
+      const nowMs = performance.now();
+      const scanCooldownReady =
+        lastHoverTriggerRef.current.scanTargetId !== closestId ||
+        nowMs - lastHoverTriggerRef.current.scanAt > 1800;
+      if (
+        closestDist <= 9.0 &&
+        !collectedIds.includes(closestId) &&
+        !storeState.scanningState.active &&
+        scanCooldownReady
+      ) {
+        lastHoverTriggerRef.current.scanTargetId = closestId;
+        lastHoverTriggerRef.current.scanAt = nowMs;
+        storeState.startScan(closestId);
+      }
+    }
 
-    // Lander airlock / sample return locker proximity check
+    // Lander airlock / sample return locker proximity & reticle gaze hover check
     const airlockDist = Math.hypot(camera.position.x, camera.position.z - 5.95);
     const lockerDist = Math.hypot(camera.position.x - 1.38, camera.position.z - 6.22);
     const landerBayDist = Math.min(airlockDist, lockerDist);
     const nearLander = landerBayDist <= 4.0;
     storeState.setLanderProximity(nearLander, Math.hypot(camera.position.x, camera.position.z - 8));
+
+    const landerBaseY = getTerrainHeightAt(0, 8, site.terrainProfile) + 1.5;
+    toObjVec.set(-camera.position.x, landerBaseY - camera.position.y, 5.95 - camera.position.z).normalize();
+    const landerLookDot = lookDirVec.dot(toObjVec);
+    if (
+      airlockDist <= 6.5 &&
+      landerLookDot > 0.9 &&
+      (carriedCount > 0 || physio.oxygen < 95) &&
+      performance.now() - lastHoverTriggerRef.current.landerAt > 2500
+    ) {
+      lastHoverTriggerRef.current.landerAt = performance.now();
+      storeState.resupplyAndOffloadAtLander();
+    }
 
     // Throttled HUD telemetry & Martian EVA physiology simulation (~10–13 Hz)
     telemetryTimerRef.current += dt;
@@ -369,13 +424,13 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
       });
 
       if (storeState.viewMode === 'EVA' && !storeState.isTransitioning && !abortTriggeredRef.current) {
-        // 1. Suit Oxygen (0–100%): 0.22%/sec base, faster with sprint, +12% per sample, +25% heavy respiration when fatigued
-        const exertionMult = canSprint ? 2.25 : isMoving ? 1.28 : 1.0;
-        const sampleBurnMult = 1.0 + carriedCount * 0.12;
-        const fatigueRespMult = physio.stamina < 20 ? 1.25 : 1.0;
+        // 1. Suit Oxygen (0–100%): minimized drain rate while exploring
+        const exertionMult = canSprint ? 1.65 : isMoving ? 1.15 : 1.0;
+        const sampleBurnMult = 1.0 + carriedCount * 0.04;
+        const fatigueRespMult = physio.stamina < 20 ? 1.12 : 1.0;
         const nextOxygen = Math.max(
           0,
-          physio.oxygen - 0.22 * exertionMult * sampleBurnMult * fatigueRespMult * pdt
+          physio.oxygen - 0.08 * exertionMult * sampleBurnMult * fatigueRespMult * pdt
         );
 
         if (nextOxygen <= 0) {
@@ -385,23 +440,23 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
           return;
         }
 
-        // 2. Stamina (0–100%): sprints (~8.2%/s) or uphill (>15°) drain stamina; heavier pack & cold slow recovery
+        // 2. Stamina (0–100%): minimized sprint/uphill drain
         const isUphill = isMoving && slopeDeg > 15;
-        const massStrain = 1.0 + packMassKg * 0.045;
+        const massStrain = 1.0 + packMassKg * 0.015;
         let nextStamina = physio.stamina;
         if (canSprint || isUphill) {
           const drainRate =
-            ((canSprint ? 8.2 : 0) + (isUphill ? (slopeDeg - 13) * 0.34 : 0)) * massStrain;
+            ((canSprint ? 3.6 : 0) + (isUphill ? (slopeDeg - 13) * 0.14 : 0)) * massStrain;
           nextStamina = Math.max(0, physio.stamina - drainRate * pdt);
         } else {
           const recoveryRate =
-            (isMoving ? 1.4 : 3.5) * Math.max(0.35, 1.0 - packMassKg * 0.03);
+            (isMoving ? 2.4 : 4.8) * Math.max(0.65, 1.0 - packMassKg * 0.01);
           nextStamina = Math.min(100, physio.stamina + recoveryRate * pdt);
         }
 
-        // 3. Body Core Temperature (37.0°C nominal) & Suit Thermal Heater Loop (0–100%)
+        // 3. Body Core Temperature (37.0°C nominal) & Suit Thermal Heater Loop (0–100%, minimized drain)
         const inColdZone = groundY < -0.3 || (site.terrainProfile?.iceFactor ?? 0) > 0.4;
-        const heaterDrain = inColdZone ? 0.68 : 0.38;
+        const heaterDrain = inColdZone ? 0.22 : 0.12;
         const nextHeater = Math.max(0, physio.heaterReserve - heaterDrain * pdt);
 
         let targetTemp = 37.0;
@@ -437,8 +492,8 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
   });
 
   const pointerLoadSpeed = Math.max(
-    0.72,
-    1.0 - Math.min(1, carriedMassKg / (maxPackMassKg || 25)) * 0.28
+    0.92,
+    1.0 - Math.min(1, carriedMassKg / (maxPackMassKg || 25)) * 0.08
   );
 
   return (

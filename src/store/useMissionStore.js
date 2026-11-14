@@ -16,8 +16,10 @@ export const useMissionStore = create((set, get) => ({
   activeTargetId: null,
   observedTargetId: null,
 
-  // Diegetic Wrist Map & EVA Field Tools
+  // Diegetic ARES-V Field Slate & EVA Field Tools
   wristMapOpen: false,
+  slateTab: 'MAP', // 'MAP' | 'SPECTRA' | 'MOBILITY'
+  inspectedTargetId: null,
   headlampOn: false,
   sunGlareFactor: 0,
   activeRoute: null, // { targetId, targetName, points, distanceMeters, maxSlopeDeg }
@@ -37,12 +39,16 @@ export const useMissionStore = create((set, get) => ({
   collectedSamples: {
     jezero: [],
     gale: [],
+    meridiani: [],
+    gusev: [],
     arcadia: [],
   },
 
   vaultedSamples: {
     jezero: [],
     gale: [],
+    meridiani: [],
+    gusev: [],
     arcadia: [],
   },
 
@@ -71,6 +77,8 @@ export const useMissionStore = create((set, get) => ({
   discoveredRovers: {
     jezero: false,
     gale: false,
+    meridiani: false,
+    gusev: false,
     arcadia: false,
   },
   nearRover: false,
@@ -113,6 +121,8 @@ export const useMissionStore = create((set, get) => ({
       activeTargetId: null,
       observedTargetId: null,
       wristMapOpen: false,
+      slateTab: 'MAP',
+      inspectedTargetId: null,
       headlampOn: false,
       sunGlareFactor: 0,
       activeRoute: null,
@@ -197,6 +207,8 @@ export const useMissionStore = create((set, get) => ({
         activeTargetId: null,
         observedTargetId: null,
         wristMapOpen: false,
+        slateTab: 'MAP',
+        inspectedTargetId: null,
         headlampOn: false,
         sunGlareFactor: 0,
         activeRoute: null,
@@ -389,9 +401,17 @@ export const useMissionStore = create((set, get) => ({
           }
     ),
 
+  setSlateTab: (tab) => set({ slateTab: tab }),
+
+  setInspectedTargetId: (id) => set({ inspectedTargetId: id }),
+
   setActiveTarget: (targetId) => {
     if (get().activeTargetId !== targetId) {
-      set({ activeTargetId: targetId, observedTargetId: null });
+      set((state) => ({
+        activeTargetId: targetId,
+        observedTargetId: null,
+        inspectedTargetId: targetId || state.inspectedTargetId,
+      }));
     }
   },
 

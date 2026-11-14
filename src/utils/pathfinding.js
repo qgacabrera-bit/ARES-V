@@ -1,9 +1,6 @@
 import { getTerrainHeightAt, getTerrainSlopeAndNormal } from './terrainMath';
 
-const GRID_MIN = -85;
-const GRID_MAX = 85;
-const GRID_SIZE = 68; // 68 x 68 cells => 2.5m spacing
-const CELL_SIZE = (GRID_MAX - GRID_MIN) / (GRID_SIZE - 1);
+const GRID_SIZE = 68; // 68 x 68 cells over active search window
 
 const NEIGHBORS = [
   [-1, 0, 1],
@@ -59,19 +56,6 @@ class MinHeap {
   }
 }
 
-function worldToGrid(x, z) {
-  const gx = Math.round((Math.min(GRID_MAX, Math.max(GRID_MIN, x)) - GRID_MIN) / CELL_SIZE);
-  const gz = Math.round((Math.min(GRID_MAX, Math.max(GRID_MIN, z)) - GRID_MIN) / CELL_SIZE);
-  return [
-    Math.min(GRID_SIZE - 1, Math.max(0, gx)),
-    Math.min(GRID_SIZE - 1, Math.max(0, gz)),
-  ];
-}
-
-function gridToWorld(gx, gz) {
-  return [GRID_MIN + gx * CELL_SIZE, GRID_MIN + gz * CELL_SIZE];
-}
-
 function chaikinSmooth(pts, passes = 2) {
   if (pts.length < 3) return pts;
   let current = pts;
@@ -93,6 +77,28 @@ function chaikinSmooth(pts, passes = 2) {
  * Computes the lowest-slope (<15° preferred) 8-connected A* path from startXZ to goalXZ.
  */
 export function computeSafeTraversePath(startXZ, goalXZ, siteProfile) {
+  const pad = 38;
+  const centerX = (startXZ[0] + goalXZ[0]) * 0.5;
+  const centerZ = (startXZ[1] + goalXZ[1]) * 0.5;
+  const halfSpan = Math.max(
+    51,
+    Math.abs(goalXZ[0] - startXZ[0]) * 0.5 + pad,
+    Math.abs(goalXZ[1] - startXZ[1]) * 0.5 + pad
+  );
+  const minX = centerX - halfSpan;
+  const minZ = centerZ - halfSpan;
+  const cellSize = (halfSpan * 2) / (GRID_SIZE - 1);
+
+  const worldToGrid = (x, z) => {
+    const gx = Math.round((Math.min(centerX + halfSpan, Math.max(minX, x)) - minX) / cellSize);
+    const gz = Math.round((Math.min(centerZ + halfSpan, Math.max(minZ, z)) - minZ) / cellSize);
+    return [
+      Math.min(GRID_SIZE - 1, Math.max(0, gx)),
+      Math.min(GRID_SIZE - 1, Math.max(0, gz)),
+    ];
+  };
+  const gridToWorld = (gx, gz) => [minX + gx * cellSize, minZ + gz * cellSize];
+
   const totalCells = GRID_SIZE * GRID_SIZE;
   const slopes = new Float32Array(totalCells);
 
@@ -116,7 +122,7 @@ export function computeSafeTraversePath(startXZ, goalXZ, siteProfile) {
 
   gScore[startIdx] = 0;
   const open = new MinHeap();
-  const h0 = Math.hypot(ex - sx, ez - sz) * CELL_SIZE;
+  const h0 = Math.hypot(ex - sx, ez - sz) * cellSize;
   open.push({ idx: startIdx, f: h0 });
 
   while (open.length > 0) {
@@ -138,7 +144,7 @@ export function computeSafeTraversePath(startXZ, goalXZ, siteProfile) {
       if (closed[nIdx]) continue;
 
       const slope = Math.max(slopes[idx], slopes[nIdx]);
-      const stepDist = stepMult * CELL_SIZE;
+      const stepDist = stepMult * cellSize;
 
       let penalty = 1.0 + slope * 0.03;
       if (slope > 25) {
@@ -151,7 +157,7 @@ export function computeSafeTraversePath(startXZ, goalXZ, siteProfile) {
       if (tentativeG < gScore[nIdx]) {
         cameFrom[nIdx] = idx;
         gScore[nIdx] = tentativeG;
-        const h = Math.hypot(ex - nx, ez - nz) * CELL_SIZE;
+        const h = Math.hypot(ex - nx, ez - nz) * cellSize;
         open.push({ idx: nIdx, f: tentativeG + h });
       }
     }

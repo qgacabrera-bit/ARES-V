@@ -1,7 +1,5 @@
-import React, { useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useMemo, useState } from 'react';
 import { Html } from '@react-three/drei';
-import * as THREE from 'three';
 import { getTerrainHeightAt } from '../../utils/terrainMath';
 import { useMissionStore } from '../../store/useMissionStore';
 
@@ -16,21 +14,17 @@ export default function SampleTarget({
   siteProfile,
   terrainVersion = 0,
   isCollected,
-  isActive,
-  distance,
 }) {
-  const ringRef = useRef();
-  const beamRef = useRef();
-  const scanRingRef = useRef();
+  const [isHovered, setIsHovered] = useState(false);
 
-  const evaLayer = useMissionStore((s) => s.evaLayer);
   const scanningState = useMissionStore((s) => s.scanningState);
-  const observedTargetId = useMissionStore((s) => s.observedTargetId);
+  const wristMapOpen = useMissionStore((s) => s.wristMapOpen);
+  const viewMode = useMissionStore((s) => s.viewMode);
+  const setActiveTarget = useMissionStore((s) => s.setActiveTarget);
   const observeTarget = useMissionStore((s) => s.observeTarget);
   const startScan = useMissionStore((s) => s.startScan);
 
   const isScanningThis = scanningState.active && scanningState.targetId === target.id;
-  const isObservingThis = observedTargetId === target.id;
 
   const worldPos = useMemo(() => {
     const [x, z] = target.position;
@@ -38,53 +32,33 @@ export default function SampleTarget({
     return [x, y, z];
   }, [target.position, siteProfile, terrainVersion]);
 
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    if (ringRef.current) {
-      const pulse = isActive ? 1.08 + Math.sin(t * 5.0) * 0.08 : 1.0 + Math.sin(t * 2.2) * 0.04;
-      ringRef.current.scale.set(pulse, pulse, 1);
-      ringRef.current.rotation.z = t * (isActive ? 0.9 : 0.25);
-    }
-    if (beamRef.current) {
-      beamRef.current.material.opacity = isCollected
-        ? 0.08
-        : evaLayer === 'SPECTRAL' || isActive
-        ? 0.28 + Math.sin(t * 3.5) * 0.1
-        : 0.12;
-    }
-    if (scanRingRef.current && isScanningThis) {
-      const p = scanningState.progress / 100;
-      scanRingRef.current.position.y = 0.1 + Math.sin(p * Math.PI * 3) * 0.45 + 0.35;
-      scanRingRef.current.rotation.z = t * 6.0;
-    }
-  });
-
-  const markerColor = isCollected
-    ? '#10b981'
-    : isScanningThis
-    ? '#facc15'
-    : isActive
-    ? '#38bdf8'
-    : evaLayer === 'SPECTRAL'
-    ? '#22d3ee'
-    : '#f59e0b';
-
-  const showFloatingLabel = isActive || distance <= 18 || evaLayer === 'SPECTRAL';
+  const showFloatingLabel =
+    viewMode === 'EVA' && !wristMapOpen && (isHovered || isScanningThis);
 
   return (
-    <group
-      position={worldPos}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (isActive && !isCollected) {
-          if (isObservingThis) {
+    <group position={worldPos}>
+      {/* Generous Hover Hit-Sphere for Direct Hover-Only Interaction */}
+      <mesh
+        position={[0, 0.9, 0]}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setIsHovered(true);
+          document.body.style.cursor = 'pointer';
+          setActiveTarget(target.id);
+          observeTarget(target.id);
+          if (!isCollected && !scanningState.active) {
             startScan(target.id);
-          } else {
-            observeTarget(target.id);
           }
-        }
-      }}
-    >
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation();
+          setIsHovered(false);
+          document.body.style.cursor = 'auto';
+        }}
+      >
+        <sphereGeometry args={[1.45, 16, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
       {/* Distinct 3D Geological Outcrop Mesh per Target Type */}
       {target.type === 'mudstone' && (
         <group>
@@ -193,59 +167,32 @@ export default function SampleTarget({
         </group>
       )}
 
-      {/* Holographic Visor Ground Ring */}
-      <mesh ref={ringRef} position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.25, 1.34, 48]} />
-        <meshBasicMaterial color={markerColor} transparent opacity={isCollected ? 0.45 : 0.85} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
-
-      {/* Subtle Vertical Beacon Column for Visibility across Terrain */}
-      <mesh ref={beamRef} position={[0, 1.6, 0]}>
-        <cylinderGeometry args={[0.03, 0.22, 3.2, 16, 1, true]} />
-        <meshBasicMaterial
-          color={markerColor}
-          transparent
-          opacity={0.14}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-
-      {/* Active Laser Spectrometer Scan Ring Animation */}
+      {/* Laser Spectrometer Point Light while Actively Scanning */}
       {isScanningThis && (
-        <group>
-          <mesh ref={scanRingRef} position={[0, 0.45, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.75, 0.92, 32]} />
-            <meshBasicMaterial color="#fde047" transparent opacity={0.9} side={THREE.DoubleSide} />
-          </mesh>
-          <pointLight position={[0, 1.1, 0]} color="#38bdf8" intensity={3.5} distance={5} />
-        </group>
+        <pointLight position={[0, 1.1, 0]} color="#38bdf8" intensity={3.0} distance={5} />
       )}
 
-      {/* Progressive Disclosure 1-Line Floating Badge */}
+      {/* Clean Hover / Active-Scan Tooltip Directly Above Specimen */}
       {showFloatingLabel && (
-        <Html position={[0, 1.25, 0]} center style={{ pointerEvents: 'none' }}>
+        <Html position={[0, 1.45, 0]} center style={{ pointerEvents: 'none' }}>
           <div
-            className={`whitespace-nowrap rounded border px-2 py-0.5 font-mono text-[10px] tracking-wider shadow-lg backdrop-blur-md transition-colors ${
+            className={`whitespace-nowrap rounded border px-2.5 py-0.5 font-mono text-[10px] tracking-wider shadow-lg backdrop-blur-md transition-all ${
               isCollected
-                ? 'border-emerald-400/40 bg-black/70 text-emerald-300'
-                : isActive
-                ? 'border-sky-400/60 bg-black/80 text-sky-200'
-                : 'border-white/20 bg-black/60 text-white/85'
+                ? 'border-emerald-400/50 bg-black/80 text-emerald-300'
+                : isScanningThis
+                ? 'border-yellow-400/80 bg-black/85 text-yellow-200'
+                : 'border-sky-300/70 bg-black/85 text-sky-100'
             }`}
           >
             {isCollected ? (
-              <span>✓ {target.code} // SAMPLED</span>
-            ) : isActive ? (
+              <span>✓ {target.code} // SAMPLED ({target.name})</span>
+            ) : isScanningThis ? (
               <span>
-                {isObservingThis
-                  ? `[E] EXTRACT CORE // ${target.massKg ?? 5.5} KG`
-                  : `[E] OBSERVE SPECIMEN // ${target.instrument}`}
+                ⏳ {target.code} // SCANNING {Math.round(scanningState.progress)}%
               </span>
             ) : (
               <span>
-                {target.code} // {target.name.toUpperCase()} · {distance.toFixed(1)}m
+                {target.code} · {target.name} · {target.massKg ?? 5.5}KG
               </span>
             )}
           </div>

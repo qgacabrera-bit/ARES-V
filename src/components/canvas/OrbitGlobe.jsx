@@ -111,6 +111,104 @@ const ATMOS_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+function RoverOrbitalTrackOverlay({ site, highlighted }) {
+  const resources = useMemo(() => {
+    const rover = site?.nasaRover;
+    const rawPts = rover?.realGeoJsonLonLat;
+    if (!rawPts || rawPts.length < 2) return null;
+
+    const [startLon, startLat] = rawPts[0];
+    // Amplify km-scale rover track (~14x) around site coordinates so the exact path geometry
+    // is clearly legible from orbital altitude without shrinking sub-pixel.
+    const amp = 14.0;
+    const worldPts = rawPts.map(([lon, lat]) => {
+      const pLat = site.lat + (lat - startLat) * amp;
+      const pLon = site.lon + (lon - startLon) * amp;
+      const [vx, vy, vz] = latLonToVector3(pLat, pLon, GLOBE_RADIUS + 0.028);
+      return new THREE.Vector3(vx, vy, vz);
+    });
+
+    const coreGeom = new THREE.BufferGeometry().setFromPoints(worldPts);
+    const coreMat = new THREE.LineBasicMaterial({
+      color: '#22c55e',
+      transparent: true,
+      opacity: highlighted ? 0.98 : 0.65,
+    });
+    const coreLine = new THREE.Line(coreGeom, coreMat);
+
+    const hiPts = worldPts.map((v) => v.clone().normalize().multiplyScalar(GLOBE_RADIUS + 0.032));
+    const hiGeom = new THREE.BufferGeometry().setFromPoints(hiPts);
+    const hiMat = new THREE.LineDashedMaterial({
+      color: '#86efac',
+      dashSize: 0.022,
+      gapSize: 0.012,
+      transparent: true,
+      opacity: highlighted ? 0.96 : 0.45,
+    });
+    const hiLine = new THREE.Line(hiGeom, hiMat);
+    hiLine.computeLineDistances();
+
+    const landingVec = worldPts[0].clone().normalize().multiplyScalar(GLOBE_RADIUS + 0.033);
+    const quat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      landingVec.clone().normalize()
+    );
+
+    return {
+      coreLine,
+      hiLine,
+      coreGeom,
+      coreMat,
+      hiGeom,
+      hiMat,
+      landingPos: [landingVec.x, landingVec.y, landingVec.z],
+      landingQuat: quat,
+    };
+  }, [site, highlighted]);
+
+  useEffect(() => {
+    return () => {
+      if (!resources) return;
+      resources.coreGeom.dispose();
+      resources.coreMat.dispose();
+      resources.hiGeom.dispose();
+      resources.hiMat.dispose();
+    };
+  }, [resources]);
+
+  useFrame(({ clock }) => {
+    if (!resources) return;
+    const t = clock.getElapsedTime();
+    resources.hiMat.opacity = highlighted ? 0.68 + 0.32 * Math.sin(t * 4.2) : 0.45;
+  });
+
+  if (!resources) return null;
+
+  return (
+    <group>
+      <primitive object={resources.coreLine} />
+      <primitive object={resources.hiLine} />
+      {/* Yellow Rover Sol 0 Touchdown Pin on Mars Globe */}
+      <group position={resources.landingPos} quaternion={resources.landingQuat}>
+        <mesh renderOrder={3} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.024, 0.038, 24]} />
+          <meshBasicMaterial
+            color="#fde047"
+            transparent
+            opacity={highlighted ? 0.95 : 0.65}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+        <mesh renderOrder={3} position={[0, 0.012, 0]}>
+          <sphereGeometry args={[highlighted ? 0.02 : 0.014, 12, 12]} />
+          <meshBasicMaterial color="#facc15" />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
 function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployProgress, onSelect, onHover }) {
   const ringRef = useRef();
   const pulseRef = useRef();
@@ -164,6 +262,8 @@ function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployP
     ? '#fbbf24'
     : '#f97316';
 
+  const rover = site.nasaRover;
+
   return (
     <group position={pos} quaternion={quaternion}>
       {/* Generous invisible click/hover hit sphere */}
@@ -212,18 +312,24 @@ function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployP
         <meshBasicMaterial color={accentColor} transparent opacity={0.85} />
       </mesh>
 
-      {/* Top beacon node */}
+      {/* Top rover beacon node */}
       <mesh renderOrder={2} position={[0, 0.17, 0]}>
         <sphereGeometry args={[isSelected ? 0.032 : 0.025, 16, 16]} />
         <meshBasicMaterial color={isSelected ? '#e0f2fe' : accentColor} />
       </mesh>
 
-      {/* Progressive disclosure floating label on hover or selection (hidden during close dive) */}
+      {/* Actual NASA Rover Label shown on hover or selection */}
       {(isHovered || (isSelected && !isDeployingTarget)) && (
-        <Html position={[0, 0.27, 0]} center style={{ pointerEvents: 'none' }}>
-          <div className="whitespace-nowrap rounded border border-white/20 bg-black/75 px-2 py-0.5 font-mono text-[10px] tracking-wider text-white shadow-lg backdrop-blur-md">
-            <span className={isSelected ? 'text-sky-400' : 'text-amber-300'}>●</span>{' '}
-            {site.shortName} <span className="text-white/50">// {site.coordinates}</span>
+        <Html position={[0, 0.28, 0]} center style={{ pointerEvents: 'none' }}>
+          <div className="whitespace-nowrap rounded border border-white/25 bg-black/85 px-2.5 py-1 font-mono text-[10px] tracking-wider text-white shadow-lg backdrop-blur-md">
+            <div>
+              <span className={isSelected ? 'text-sky-400' : 'text-amber-300'}>●</span>{' '}
+              <span className="font-semibold">{rover?.name || site.shortName}</span>{' '}
+              <span className="text-cyan-300">({rover?.code})</span>
+            </div>
+            <div className="text-[8.5px] text-white/65">
+              {site.name} · {rover?.landingCoordinates || site.coordinates} · {rover?.totalOdometryKm} KM
+            </div>
           </div>
         </Html>
       )}
@@ -579,18 +685,23 @@ export default function OrbitGlobe() {
           />
         </mesh>
 
-        {/* 3 Real NASA Landing Site Beacons */}
+        {/* 3 Real NASA Landing Site Beacons & Orbital Rover Yellow Landing + Green Highlighted Paths */}
         {LANDING_ZONES.map((site) => (
-          <LandingBeacon
-            key={site.id}
-            site={site}
-            isSelected={selectedSiteId === site.id}
-            isHovered={hoveredSiteId === site.id}
-            isDeployingTarget={isDeploying && selectedSiteId === site.id}
-            deployProgress={deployProgress}
-            onSelect={(id) => !isDeploying && selectSite(id)}
-            onHover={(id) => !isDeploying && setHoveredSite(id)}
-          />
+          <React.Fragment key={site.id}>
+            <RoverOrbitalTrackOverlay
+              site={site}
+              highlighted={selectedSiteId === site.id || hoveredSiteId === site.id}
+            />
+            <LandingBeacon
+              site={site}
+              isSelected={selectedSiteId === site.id}
+              isHovered={hoveredSiteId === site.id}
+              isDeployingTarget={isDeploying && selectedSiteId === site.id}
+              deployProgress={deployProgress}
+              onSelect={(id) => !isDeploying && selectSite(id)}
+              onHover={(id) => !isDeploying && setHoveredSite(id)}
+            />
+          </React.Fragment>
         ))}
       </group>
 

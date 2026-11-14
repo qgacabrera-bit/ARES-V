@@ -4,21 +4,25 @@ import * as THREE from 'three';
 import { LANDING_ZONES_BY_ID } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import {
+  CHUNK_SIZE,
   TERRAIN_SIZE,
+  getActive3x3Chunks,
   getLocalRadiation,
   getSpectralSignature,
   getTerrainHeightAt,
   getTerrainSlopeAndNormal,
   loadHiRiseTerrainAssets,
+  worldToChunk,
 } from '../../utils/terrainMath';
 import { createPlaceholderTexture } from '../../utils/wmtsLoader';
+import FieldSlateDevice from './FieldSlateDevice';
 import FirstPersonRig from './FirstPersonRig';
 import LanderBase from './LanderBase';
 import NasaRoverSite from './NasaRoverSite';
 import SampleTarget from './SampleTarget';
-import WristTabletRig from './WristTabletRig';
 
-const TERRAIN_SEGMENTS = 192;
+const CHUNK_SEGMENTS = 64;
+const ROCKS_PER_CHUNK = 22;
 
 const TERRAIN_VERTEX_SHADER = /* glsl */ `
   attribute float aSlope;
@@ -171,16 +175,22 @@ function WindVectors({ siteProfile, terrainVersion, visibleFactor }) {
     return { positions: pos, speeds: spd };
   }, [siteProfile, terrainVersion]);
 
-  useFrame((_, delta) => {
+  useFrame(({ camera }, delta) => {
     if (!pointsRef.current) return;
     const attr = pointsRef.current.geometry.attributes.position;
     const arr = attr.array;
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    const span = 96;
+    const half = 48;
     for (let i = 0; i < count; i++) {
       const idx = i * 3;
       arr[idx] += speeds[i] * delta * (0.4 + visibleFactor * 1.1);
       arr[idx + 2] += speeds[i] * delta * 0.35;
-      if (arr[idx] > 42.5) arr[idx] = -42.5;
-      if (arr[idx + 2] > 42.5) arr[idx + 2] = -42.5;
+      if (arr[idx] - camX > half) arr[idx] -= span;
+      if (arr[idx] - camX < -half) arr[idx] += span;
+      if (arr[idx + 2] - camZ > half) arr[idx + 2] -= span;
+      if (arr[idx + 2] - camZ < -half) arr[idx + 2] += span;
     }
     attr.needsUpdate = true;
   });
@@ -202,56 +212,63 @@ function WindVectors({ siteProfile, terrainVersion, visibleFactor }) {
   );
 }
 
-function ProceduralRocks({ siteProfile, roverPos, terrainVersion }) {
+function ProceduralRocks({ siteProfile, roverPos, activeChunks, terrainVersion }) {
   const meshRef = useRef();
-  const rockCount = 175;
+  const rockCount = activeChunks.length * ROCKS_PER_CHUNK;
 
   const transforms = useMemo(() => {
     const items = [];
     const seed = siteProfile?.seed || 17.3;
-    for (let i = 0; i < rockCount; i++) {
-      const r1 = Math.sin(i * 12.9898 + seed) * 43758.5453;
-      const r2 = Math.sin(i * 78.233 + seed * 2.1) * 43758.5453;
-      const r3 = Math.sin(i * 45.164 + seed * 3.7) * 43758.5453;
-      const f1 = r1 - Math.floor(r1);
-      const f2 = r2 - Math.floor(r2);
-      const f3 = r3 - Math.floor(r3);
 
-      const angle = f1 * Math.PI * 2;
-      const radius = 5.2 + Math.pow(f2, 0.75) * 62.0;
-      let x = Math.cos(angle) * radius;
-      let z = Math.sin(angle) * radius;
-      // Keep the Lander landing apron & airlock approach clear of boulders
-      const distToLander = Math.hypot(x, z - 8);
-      if (distToLander < 6.4) {
-        const pushAngle = Math.atan2(z - 8, x);
-        x = Math.cos(pushAngle) * (6.8 + f3 * 4.0);
-        z = 8 + Math.sin(pushAngle) * (6.8 + f3 * 4.0);
-      }
-      // Keep NASA Rover site clear of intersecting boulders
-      if (roverPos) {
-        const distToRover = Math.hypot(x - roverPos[0], z - roverPos[1]);
-        if (distToRover < 3.8) {
-          const pushAngle = Math.atan2(z - roverPos[1], x - roverPos[0]);
-          x = roverPos[0] + Math.cos(pushAngle) * (4.1 + f2 * 2.4);
-          z = roverPos[1] + Math.sin(pushAngle) * (4.1 + f2 * 2.4);
+    activeChunks.forEach((chunk) => {
+      const chunkSeed = chunk.cx * 73.13 + chunk.cz * 151.7 + seed;
+      for (let i = 0; i < ROCKS_PER_CHUNK; i++) {
+        const r1 = Math.sin(i * 12.9898 + chunkSeed) * 43758.5453;
+        const r2 = Math.sin(i * 78.233 + chunkSeed * 2.1) * 43758.5453;
+        const r3 = Math.sin(i * 45.164 + chunkSeed * 3.7) * 43758.5453;
+        const f1 = r1 - Math.floor(r1);
+        const f2 = r2 - Math.floor(r2);
+        const f3 = r3 - Math.floor(r3);
+
+        let x = chunk.minX + 1.2 + f1 * (CHUNK_SIZE - 2.4);
+        let z = chunk.minZ + 1.2 + f2 * (CHUNK_SIZE - 2.4);
+
+        // Keep player spawn & Lander landing apron clear of boulders
+        if (Math.hypot(x, z) < 4.2) {
+          const pushAngle = Math.atan2(z, x || 0.1);
+          x = Math.cos(pushAngle) * 5.0;
+          z = Math.sin(pushAngle) * 5.0;
         }
-      }
-      const y = getTerrainHeightAt(x, z, siteProfile);
+        const distToLander = Math.hypot(x, z - 8);
+        if (distToLander < 6.4) {
+          const pushAngle = Math.atan2(z - 8, x);
+          x = Math.cos(pushAngle) * (6.8 + f3 * 4.0);
+          z = 8 + Math.sin(pushAngle) * (6.8 + f3 * 4.0);
+        }
+        if (roverPos) {
+          const distToRover = Math.hypot(x - roverPos[0], z - roverPos[1]);
+          if (distToRover < 3.8) {
+            const pushAngle = Math.atan2(z - roverPos[1], x - roverPos[0]);
+            x = roverPos[0] + Math.cos(pushAngle) * (4.1 + f2 * 2.4);
+            z = roverPos[1] + Math.sin(pushAngle) * (4.1 + f2 * 2.4);
+          }
+        }
+        const y = getTerrainHeightAt(x, z, siteProfile);
 
-      const scaleBase = 0.18 + Math.pow(f3, 2.2) * 1.15;
-      items.push({
-        position: [x, y + scaleBase * 0.22, z],
-        rotation: [f1 * Math.PI, f2 * Math.PI * 2, f3 * Math.PI],
-        scale: [
-          scaleBase * (0.9 + f1 * 0.5),
-          scaleBase * (0.55 + f2 * 0.4),
-          scaleBase * (0.85 + f3 * 0.5),
-        ],
-      });
-    }
+        const scaleBase = 0.18 + Math.pow(f3, 2.2) * 1.15;
+        items.push({
+          position: [x, y + scaleBase * 0.22, z],
+          rotation: [f1 * Math.PI, f2 * Math.PI * 2, f3 * Math.PI],
+          scale: [
+            scaleBase * (0.9 + f1 * 0.5),
+            scaleBase * (0.55 + f2 * 0.4),
+            scaleBase * (0.85 + f3 * 0.5),
+          ],
+        });
+      }
+    });
     return items;
-  }, [siteProfile, roverPos, terrainVersion]);
+  }, [siteProfile, roverPos, activeChunks, terrainVersion]);
 
   useEffect(() => {
     if (!meshRef.current) return;
@@ -271,60 +288,6 @@ function ProceduralRocks({ siteProfile, roverPos, terrainVersion }) {
       <dodecahedronGeometry args={[0.55, 0]} />
       <meshStandardMaterial color={siteProfile?.rockTint || '#5c3828'} roughness={0.93} metalness={0.04} />
     </instancedMesh>
-  );
-}
-
-function RouteBreadcrumbs({ activeRoute }) {
-  const groupRef = useRef();
-
-  const chevrons = useMemo(() => {
-    if (!activeRoute || !activeRoute.points || activeRoute.points.length < 2) return [];
-    const items = [];
-    const pts = activeRoute.points;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [x, y, z] = pts[i];
-      const [nx, , nz] = pts[i + 1];
-      const yaw = Math.atan2(nx - x, nz - z);
-      items.push({ position: [x, y, z], yaw, index: i });
-    }
-    return items;
-  }, [activeRoute]);
-
-  useFrame(({ clock }) => {
-    if (!groupRef.current) return;
-    const t = clock.getElapsedTime();
-    const children = groupRef.current.children;
-    for (let i = 0; i < children.length; i++) {
-      const mesh = children[i];
-      if (mesh?.material) {
-        const wave = 0.45 + 0.55 * Math.max(0, Math.sin(t * 4.5 - i * 0.65));
-        mesh.material.opacity = wave * 0.85;
-      }
-    }
-  });
-
-  if (chevrons.length === 0) return null;
-
-  return (
-    <group ref={groupRef}>
-      {chevrons.map((c) => (
-        <mesh
-          key={c.index}
-          position={c.position}
-          rotation={[-Math.PI / 2, 0, c.yaw - Math.PI / 2]}
-        >
-          <ringGeometry args={[0.14, 0.24, 3]} />
-          <meshBasicMaterial
-            color="#34d399"
-            transparent
-            opacity={0.75}
-            side={THREE.DoubleSide}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
-    </group>
   );
 }
 
@@ -418,20 +381,75 @@ function RimfaxRadarWave({ siteProfile }) {
   );
 }
 
+function buildTerrainChunkGeometry(chunk, site) {
+  const geom = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
+  geom.rotateX(-Math.PI / 2);
+
+  const posAttr = geom.attributes.position;
+  const uvAttr = geom.attributes.uv;
+  const count = posAttr.count;
+  const slopes = new Float32Array(count);
+  const spectrals = new Float32Array(count * 3);
+  const rads = new Float32Array(count);
+  const normals = new Float32Array(count * 3);
+  const halfTerrain = TERRAIN_SIZE * 0.5;
+
+  for (let i = 0; i < count; i++) {
+    const wx = chunk.centerX + posAttr.getX(i);
+    const wz = chunk.centerZ + posAttr.getZ(i);
+    const y = getTerrainHeightAt(wx, wz, site.terrainProfile);
+    posAttr.setY(i, y);
+
+    if (uvAttr) {
+      const u = Math.min(1, Math.max(0, (wx + halfTerrain) / TERRAIN_SIZE));
+      const v = Math.min(1, Math.max(0, 1.0 - (wz + halfTerrain) / TERRAIN_SIZE));
+      uvAttr.setXY(i, u, v);
+    }
+
+    const { slopeDeg, normal } = getTerrainSlopeAndNormal(wx, wz, site.terrainProfile);
+    slopes[i] = slopeDeg;
+    normals[i * 3] = normal[0];
+    normals[i * 3 + 1] = normal[1];
+    normals[i * 3 + 2] = normal[2];
+
+    const spec = getSpectralSignature(wx, wz, site.terrainProfile, site.targets);
+    spectrals[i * 3] = spec.clay;
+    spectrals[i * 3 + 1] = spec.sulfate;
+    spectrals[i * 3 + 2] = spec.carbonate;
+
+    rads[i] = getLocalRadiation(wx, wz, y, slopeDeg, site.baseRadiation);
+  }
+
+  geom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  geom.setAttribute('aSlope', new THREE.BufferAttribute(slopes, 1));
+  geom.setAttribute('aSpectral', new THREE.BufferAttribute(spectrals, 3));
+  geom.setAttribute('aRad', new THREE.BufferAttribute(rads, 1));
+  geom.computeBoundingSphere();
+
+  return geom;
+}
+
 export default function SurfaceEVA() {
   const selectedSiteId = useMissionStore((s) => s.selectedSiteId) || 'jezero';
   const evaLayer = useMissionStore((s) => s.evaLayer);
   const collectedSamples = useMissionStore((s) => s.collectedSamples);
-  const activeTargetId = useMissionStore((s) => s.activeTargetId);
-  const activeRoute = useMissionStore((s) => s.activeRoute);
+  const playerPos = useMissionStore((s) => s.telemetry.position);
   const setSurfaceDataSource = useMissionStore((s) => s.setSurfaceDataSource);
 
   const site = LANDING_ZONES_BY_ID[selectedSiteId] || LANDING_ZONES_BY_ID.jezero;
   const siteCollectedIds = collectedSamples[site.id] || [];
 
+  const [playerCx, playerCz] = worldToChunk(playerPos?.[0] ?? 0, playerPos?.[1] ?? 0);
+  const activeChunks = useMemo(
+    () => getActive3x3Chunks(playerCx * CHUNK_SIZE, playerCz * CHUNK_SIZE),
+    [playerCx, playerCz]
+  );
+
   const terrainMatRef = useRef();
+  const dirLightRef = useRef();
+  const dirLightTarget = useMemo(() => new THREE.Object3D(), []);
+  const chunkGeomCacheRef = useRef(new Map());
   const [terrainVersion, setTerrainVersion] = useState(0);
-  const [targetDistances, setTargetDistances] = useState({});
 
   const placeholderTex = useMemo(() => createPlaceholderTexture(), []);
 
@@ -464,6 +482,32 @@ export default function SurfaceEVA() {
     [site, placeholderTex]
   );
 
+  const terrainMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: TERRAIN_VERTEX_SHADER,
+        fragmentShader: TERRAIN_FRAGMENT_SHADER,
+        uniforms: terrainUniforms,
+      }),
+    [terrainUniforms]
+  );
+
+  useEffect(() => {
+    terrainMatRef.current = terrainMaterial;
+    return () => {
+      terrainMaterial.dispose();
+    };
+  }, [terrainMaterial]);
+
+  // Dispose cached chunk geometries when site or terrain asset updates
+  useEffect(() => {
+    const cache = chunkGeomCacheRef.current;
+    return () => {
+      cache.forEach((g) => g.dispose());
+      cache.clear();
+    };
+  }, [site.id, terrainVersion]);
+
   // Attempt loading HiRISE heightmap PNG & albedo JPG from /terrain/{zoneId}/
   useEffect(() => {
     let active = true;
@@ -486,51 +530,27 @@ export default function SurfaceEVA() {
     };
   }, [site, placeholderTex, setSurfaceDataSource]);
 
-  // Build displaced terrain geometry using bilinear heightmap + finite-difference normals
-  const terrainGeometry = useMemo(() => {
-    const geom = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
-    geom.rotateX(-Math.PI / 2);
+  // Stream the 3x3 chunk meshes around the player's current chunk [playerCx, playerCz]
+  const activeChunkMeshes = useMemo(() => {
+    return activeChunks.map((chunk) => {
+      const cacheKey = `${site.id}:${terrainVersion}:${chunk.key}`;
+      let geometry = chunkGeomCacheRef.current.get(cacheKey);
+      if (!geometry) {
+        geometry = buildTerrainChunkGeometry(chunk, site);
+        chunkGeomCacheRef.current.set(cacheKey, geometry);
+      }
+      return { chunk, geometry };
+    });
+  }, [activeChunks, site, terrainVersion]);
 
-    const posAttr = geom.attributes.position;
-    const count = posAttr.count;
-    const slopes = new Float32Array(count);
-    const spectrals = new Float32Array(count * 3);
-    const rads = new Float32Array(count);
-    const normals = new Float32Array(count * 3);
-
-    for (let i = 0; i < count; i++) {
-      const x = posAttr.getX(i);
-      const z = posAttr.getZ(i);
-      const y = getTerrainHeightAt(x, z, site.terrainProfile);
-      posAttr.setY(i, y);
-
-      const { slopeDeg, normal } = getTerrainSlopeAndNormal(x, z, site.terrainProfile);
-      slopes[i] = slopeDeg;
-      normals[i * 3] = normal[0];
-      normals[i * 3 + 1] = normal[1];
-      normals[i * 3 + 2] = normal[2];
-
-      const spec = getSpectralSignature(x, z, site.terrainProfile, site.targets);
-      spectrals[i * 3] = spec.clay;
-      spectrals[i * 3 + 1] = spec.sulfate;
-      spectrals[i * 3 + 2] = spec.carbonate;
-
-      rads[i] = getLocalRadiation(x, z, y, slopeDeg, site.baseRadiation);
-    }
-
-    geom.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    geom.setAttribute('aSlope', new THREE.BufferAttribute(slopes, 1));
-    geom.setAttribute('aSpectral', new THREE.BufferAttribute(spectrals, 3));
-    geom.setAttribute('aRad', new THREE.BufferAttribute(rads, 1));
-
-    return geom;
-  }, [site, terrainVersion]);
-
+  // Keep shadow frustum centered on the active 3x3 chunk grid
   useEffect(() => {
-    return () => {
-      terrainGeometry.dispose();
-    };
-  }, [terrainGeometry]);
+    if (dirLightRef.current) {
+      dirLightTarget.position.set(playerCx * CHUNK_SIZE, 0, playerCz * CHUNK_SIZE);
+      dirLightTarget.updateMatrixWorld();
+      dirLightRef.current.target = dirLightTarget;
+    }
+  }, [playerCx, playerCz, dirLightTarget]);
 
   const targetFogVec = useMemo(() => new THREE.Color(), []);
 
@@ -572,30 +592,33 @@ export default function SurfaceEVA() {
       <fog attach="fog" args={[fogColorHex, 18, 105]} />
 
       <hemisphereLight args={['#e29b7a', '#3d2218', 0.65]} />
+      <primitive object={dirLightTarget} />
       <directionalLight
-        position={[35, 28, 22]}
+        ref={dirLightRef}
+        position={[playerCx * CHUNK_SIZE + 35, 28, playerCz * CHUNK_SIZE + 22]}
         intensity={2.1}
         color="#ffe2cc"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
         shadow-camera-near={1}
-        shadow-camera-far={120}
-        shadow-camera-left={-45}
-        shadow-camera-right={45}
-        shadow-camera-top={45}
-        shadow-camera-bottom={-45}
+        shadow-camera-far={140}
+        shadow-camera-left={-55}
+        shadow-camera-right={55}
+        shadow-camera-top={55}
+        shadow-camera-bottom={-55}
       />
 
-      {/* Displaced Martian Terrain (HiRISE DTM PNG or Multi-Octave Procedural Fallback) */}
-      <mesh geometry={terrainGeometry} receiveShadow>
-        <shaderMaterial
-          ref={terrainMatRef}
-          vertexShader={TERRAIN_VERTEX_SHADER}
-          fragmentShader={TERRAIN_FRAGMENT_SHADER}
-          uniforms={terrainUniforms}
+      {/* Streamed 3x3 Terrain Chunks (34m x 34m per chunk = 102m x 102m loaded sector) */}
+      {activeChunkMeshes.map(({ chunk, geometry }) => (
+        <mesh
+          key={chunk.key}
+          position={[chunk.centerX, 0, chunk.centerZ]}
+          geometry={geometry}
+          material={terrainMaterial}
+          receiveShadow
         />
-      </mesh>
+      ))}
 
       {/* Mars Descent/Ascent Lander Base 8m behind spawn */}
       <LanderBase site={site} terrainVersion={terrainVersion} />
@@ -603,10 +626,11 @@ export default function SurfaceEVA() {
       {/* Historic NASA Rover Site, Traverse Tracks & Pinpoint Beacons */}
       <NasaRoverSite site={site} terrainVersion={terrainVersion} />
 
-      {/* Scattered Basaltic Rocks */}
+      {/* Streamed Basaltic Rocks across active 3x3 chunks */}
       <ProceduralRocks
         siteProfile={site.terrainProfile}
         roverPos={site.nasaRover?.position}
+        activeChunks={activeChunks}
         terrainVersion={terrainVersion}
       />
 
@@ -617,7 +641,7 @@ export default function SurfaceEVA() {
         visibleFactor={evaLayer === 'ENV' ? 1 : 0}
       />
 
-      {/* 3 Real NASA Geological Sample Targets */}
+      {/* Geological Sample Targets (Hover-Interactive Only) */}
       {site.targets.map((target) => (
         <SampleTarget
           key={target.id}
@@ -625,13 +649,8 @@ export default function SurfaceEVA() {
           siteProfile={site.terrainProfile}
           terrainVersion={terrainVersion}
           isCollected={siteCollectedIds.includes(target.id)}
-          isActive={activeTargetId === target.id}
-          distance={targetDistances[target.id] ?? 15}
         />
       ))}
-
-      {/* AR Safe-Traverse Chevron Breadcrumbs */}
-      <RouteBreadcrumbs activeRoute={activeRoute} />
 
       {/* Subsurface RIMFAX Radar Wave & Echo Rings */}
       <RimfaxRadarWave siteProfile={site.terrainProfile} />
@@ -640,11 +659,10 @@ export default function SurfaceEVA() {
       <FirstPersonRig
         site={site}
         terrainVersion={terrainVersion}
-        onTargetDistances={setTargetDistances}
       />
 
-      {/* Hand-Held / Wrist-Mounted Holographic Mars Map & Helmet Headlamp */}
-      <WristTabletRig site={site} terrainVersion={terrainVersion} />
+      {/* Hand-Held / Forearm-Mounted Interactive ARES-V Field Slate & Helmet Headlamp */}
+      <FieldSlateDevice site={site} terrainVersion={terrainVersion} />
     </>
   );
 }

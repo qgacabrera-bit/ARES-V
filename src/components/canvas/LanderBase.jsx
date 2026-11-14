@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -15,14 +15,14 @@ const STRUT_ANGLES = [
 export default function LanderBase({ site, terrainVersion }) {
   const strobeRef = useRef();
   const beaconMatRef = useRef();
-  const approachRingRef = useRef();
+  const hoverCooldownRef = useRef(0);
+  const [airlockHovered, setAirlockHovered] = useState(false);
 
   const viewMode = useMissionStore((s) => s.viewMode);
   const wristMapOpen = useMissionStore((s) => s.wristMapOpen);
-  const landerDistance = useMissionStore((s) => s.landerDistance);
-  const nearLander = useMissionStore((s) => s.nearLander);
   const landerReserves = useMissionStore((s) => s.landerReserves);
   const vaultedSamples = useMissionStore((s) => s.vaultedSamples);
+  const resupplyAndOffloadAtLander = useMissionStore((s) => s.resupplyAndOffloadAtLander);
 
   const groundY = useMemo(() => {
     void terrainVersion;
@@ -41,16 +41,10 @@ export default function LanderBase({ site, terrainVersion }) {
     if (beaconMatRef.current) {
       beaconMatRef.current.emissiveIntensity = 1.2 + Math.sin(t * 3.2) * 0.45;
     }
-    if (approachRingRef.current) {
-      approachRingRef.current.opacity = nearLander
-        ? 0.42 + Math.sin(t * 4.5) * 0.14
-        : 0.16;
-    }
   });
 
-  // Only show the compact diegetic reserve counter when near or approaching the airlock
-  const showReserveLabel =
-    viewMode === 'EVA' && !wristMapOpen && landerDistance <= 11.5;
+  // Only show the compact airlock tooltip while hovering the airlock
+  const showReserveLabel = viewMode === 'EVA' && !wristMapOpen && airlockHovered;
 
   return (
     <group position={[0, groundY, 8]} name="mars-lander-base">
@@ -63,18 +57,6 @@ export default function LanderBase({ site, terrainVersion }) {
           metalness={0.05}
           transparent
           opacity={0.72}
-        />
-      </mesh>
-
-      {/* Airlock approach indicator ring on the regolith (centered around airlock stair z = -2.35) */}
-      <mesh position={[0, 0.04, -2.35]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.55, 1.72, 36]} />
-        <meshBasicMaterial
-          ref={approachRingRef}
-          color={nearLander ? '#22d3ee' : '#f59e0b'}
-          transparent
-          opacity={0.18}
-          side={THREE.DoubleSide}
         />
       </mesh>
 
@@ -227,8 +209,25 @@ export default function LanderBase({ site, terrainVersion }) {
         </mesh>
       ))}
 
-      {/* Front Airlock Extension Vestibule & Pressurized Hatch (-Z facing spawn [0,0]) */}
-      <group position={[0, 1.56, -2.05]}>
+      {/* Front Airlock Extension Vestibule & Pressurized Hatch (-Z facing spawn [0,0]) — Hover-Interactable */}
+      <group
+        position={[0, 1.56, -2.05]}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setAirlockHovered(true);
+          document.body.style.cursor = 'pointer';
+          const now = performance.now();
+          if (now - hoverCooldownRef.current > 2000) {
+            hoverCooldownRef.current = now;
+            resupplyAndOffloadAtLander();
+          }
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation();
+          setAirlockHovered(false);
+          document.body.style.cursor = 'auto';
+        }}
+      >
         {/* Vestibule Housing */}
         <mesh castShadow receiveShadow>
           <boxGeometry args={[1.45, 1.55, 0.86]} />
@@ -380,11 +379,11 @@ export default function LanderBase({ site, terrainVersion }) {
         />
       </group>
 
-      {/* Progressive-disclosure compact reserve readout when standing near / looking at airlock */}
+      {/* Hover-Only Airlock Reserve Readout */}
       {showReserveLabel && (
-        <Html position={[0, 3.05, -2.2]} center distanceFactor={10}>
-          <div className="pointer-events-none select-none whitespace-nowrap rounded border border-amber-400/35 bg-slate-950/75 px-2.5 py-1 font-mono text-[10px] tracking-[0.14em] text-slate-200 backdrop-blur-sm">
-            <span className="text-amber-300">ARES-V LANDER</span>
+        <Html position={[0, 3.1, -2.05]} center distanceFactor={10}>
+          <div className="pointer-events-none select-none whitespace-nowrap rounded border border-sky-300/75 bg-slate-950/85 px-2.5 py-1 font-mono text-[10px] tracking-[0.14em] text-slate-100 shadow-lg backdrop-blur-sm">
+            <span className="text-sky-300">ARES-V AIRLOCK // RESUPPLY &amp; OFFLOAD</span>
             <span className="mx-1.5 text-slate-600">|</span>
             <span>
               SHIP O₂:{' '}
