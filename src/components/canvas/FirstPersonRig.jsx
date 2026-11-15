@@ -13,6 +13,8 @@ const EYE_HEIGHT = 1.75;
 const WALK_SPEED = 5.6;
 const SPRINT_SPEED = 9.0;
 const SCAN_DURATION_SEC = 1.05;
+const MARS_GRAVITY = 3.72; // 0.38g Martian surface gravity
+const BASE_HOP_VELOCITY = 2.75;
 
 export default function FirstPersonRig({ site, terrainVersion, onTargetDistances }) {
   const { camera, gl } = useThree();
@@ -32,6 +34,7 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
   const expeditionAccumRef = useRef({ dist: 0, dt: 0, prevX: null, prevZ: null });
   const headBobPhaseRef = useRef(0);
   const velocityRef = useRef({ x: 0, z: 0 });
+  const jumpRef = useRef({ offsetY: 0, velY: 0, grounded: true, staminaCostPending: 0 });
   const abortTriggeredRef = useRef(false);
   const exhaustedLockRef = useRef(false);
   const lastHoverTriggerRef = useRef({ landerAt: 0, scanTargetId: null, scanAt: 0 });
@@ -310,6 +313,35 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
       lumberRoll + (hypoxiaIntensity > 0 ? Math.sin(elapsedT * 2.1) * 0.006 * hypoxiaIntensity : 0);
     camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, targetRoll, Math.min(1, dt * 8));
 
+    // 0.38g Martian EVA Hop (Spacebar, disabled when exhausted or on >26 deg hazard slopes)
+    const { slopeDeg: curSlopeDeg } = getTerrainSlopeAndNormal(
+      camera.position.x,
+      camera.position.z,
+      site.terrainProfile
+    );
+    if (
+      keys['Space'] &&
+      jumpRef.current.grounded &&
+      !exhaustedLockRef.current &&
+      physio.stamina >= 10 &&
+      curSlopeDeg <= 26
+    ) {
+      const loadPenalty = 1.0 - loadRatio * 0.25;
+      jumpRef.current.velY = BASE_HOP_VELOCITY * loadPenalty;
+      jumpRef.current.grounded = false;
+      jumpRef.current.staminaCostPending += 6.0;
+    }
+
+    if (!jumpRef.current.grounded) {
+      jumpRef.current.velY -= MARS_GRAVITY * dt;
+      jumpRef.current.offsetY += jumpRef.current.velY * dt;
+      if (jumpRef.current.offsetY <= 0) {
+        jumpRef.current.offsetY = 0;
+        jumpRef.current.velY = 0;
+        jumpRef.current.grounded = true;
+      }
+    }
+
     // Bilinear HiRISE / procedural terrain height clamping (+1.75m eye height, minimized load crouch)
     const groundY = getTerrainHeightAt(camera.position.x, camera.position.z, site.terrainProfile);
     const loadCrouchOffset = -loadRatio * 0.025;
@@ -317,9 +349,15 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
     const stepVertical = isTrudging
       ? Math.cos(headBobPhaseRef.current * 2) * bobAmp
       : Math.sin(elapsedT * 1.6) * 0.003;
-    const bobOffset = loadCrouchOffset + stepVertical + breathHeave + shiverJitter;
-    const targetCamY = groundY + EYE_HEIGHT + bobOffset;
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, Math.min(1, dt * 16));
+    const bobOffset = jumpRef.current.grounded
+      ? loadCrouchOffset + stepVertical + breathHeave + shiverJitter
+      : loadCrouchOffset;
+    const targetCamY = groundY + EYE_HEIGHT + bobOffset + jumpRef.current.offsetY;
+    camera.position.y = THREE.MathUtils.lerp(
+      camera.position.y,
+      targetCamY,
+      Math.min(1, dt * (jumpRef.current.grounded ? 16 : 28))
+    );
 
     // Active spectrometer scan progress
     if (storeState.scanningState.active && storeState.scanningState.targetId) {
@@ -436,6 +474,10 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
           const recoveryRate =
             (isMoving ? 2.4 : 4.8) * Math.max(0.65, 1.0 - packMassKg * 0.01);
           nextStamina = Math.min(100, physio.stamina + recoveryRate * pdt);
+        }
+        if (jumpRef.current.staminaCostPending > 0) {
+          nextStamina = Math.max(0, nextStamina - jumpRef.current.staminaCostPending);
+          jumpRef.current.staminaCostPending = 0;
         }
 
         // 3. Body Core Temperature (37.0°C nominal) & Suit Thermal Heater Loop (0–100%, minimized drain)

@@ -1184,6 +1184,7 @@ export default function VisorHUD() {
 
       {/* Key hints */}
       <div className="on-scene pointer-events-none mx-auto hidden flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-bone/75 sm:flex">
+        <span><kbd>Space</kbd> Hop</span>
         <span><kbd>M</kbd> Map</span>
         <span><kbd>1</kbd>&ndash;<kbd>4</kbd> Layers</span>
         <span><kbd>E</kbd> Interact</span>
