@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { Download, Lock, Volume2, VolumeX, X } from 'lucide-react';
 import { LANDING_ZONES, LANDING_ZONES_BY_ID, ORBITAL_LAYERS } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import { fetchLiveRoverTraverse, getMarsAlbedoCrop } from '../../utils/roverPathLoader';
+import MissionCertificate from './MissionCertificate';
 
 const NAV_ITEMS = [
   { id: null, label: 'Map' },
+  { id: 'EXPEDITION', label: 'Expedition' },
   { id: 'ABOUT', label: 'About' },
   { id: 'HOW_TO', label: 'Controls' },
   { id: 'TEAM', label: 'Team' },
@@ -39,7 +41,19 @@ export default function OrbitalHUD() {
   const selectedSiteId = useMissionStore((s) => s.selectedSiteId);
   const isDeploying = useMissionStore((s) => s.isDeploying);
   const deployProgress = useMissionStore((s) => s.deployProgress);
+  const isAscending = useMissionStore((s) => s.isAscending);
+  const ascendProgress = useMissionStore((s) => s.ascendProgress);
+  const ascendFromSiteId = useMissionStore((s) => s.ascendFromSiteId);
+  const isTransferring = useMissionStore((s) => s.isTransferring);
+  const transferProgress = useMissionStore((s) => s.transferProgress);
+  const transferFromSiteId = useMissionStore((s) => s.transferFromSiteId);
+  const isInTransit = isDeploying || isAscending || isTransferring;
   const vaultedSamples = useMissionStore((s) => s.vaultedSamples);
+  const discoveredRovers = useMissionStore((s) => s.discoveredRovers);
+  const discoveredLandingSites = useMissionStore((s) => s.discoveredLandingSites);
+  const expeditionStats = useMissionStore((s) => s.expeditionStats);
+  const audioMuted = useMissionStore((s) => s.audioMuted);
+  const toggleAudioMuted = useMissionStore((s) => s.toggleAudioMuted);
   const abortNotice = useMissionStore((s) => s.abortNotice);
   const setOrbitalLayer = useMissionStore((s) => s.setOrbitalLayer);
   const selectSite = useMissionStore((s) => s.selectSite);
@@ -59,7 +73,8 @@ export default function OrbitalHUD() {
     : null;
 
   const [liveGeoJson, setLiveGeoJson] = useState(null);
-  const [activeModal, setActiveModal] = useState(null); // null | 'ABOUT' | 'HOW_TO' | 'TEAM'
+  const [activeModal, setActiveModal] = useState(null); // null | 'EXPEDITION' | 'ABOUT' | 'HOW_TO' | 'TEAM'
+  const [astronautName, setAstronautName] = useState('Commander Valkyrie');
 
   useEffect(() => {
     if (!selectedSite?.id) {
@@ -150,7 +165,15 @@ export default function OrbitalHUD() {
     };
   }, [selectedSite, liveGeoJson]);
 
-  const descentAltKm = Math.max(0.2, 380 * Math.pow(1 - deployProgress, 2.1)).toFixed(1);
+  const ascendFromSite = ascendFromSiteId ? LANDING_ZONES_BY_ID[ascendFromSiteId] : null;
+  const transferFromSite = transferFromSiteId ? LANDING_ZONES_BY_ID[transferFromSiteId] : null;
+  const transitAltKm = isDeploying
+    ? Math.max(0.2, 380 * Math.pow(1 - deployProgress, 2.1)).toFixed(1)
+    : isAscending
+    ? Math.max(0.2, 380 * Math.pow(ascendProgress, 0.75)).toFixed(1)
+    : isTransferring
+    ? Math.max(0.2, 220 * Math.sin(transferProgress * Math.PI)).toFixed(1)
+    : '380.0';
   const siteIndex = selectedSite ? LANDING_ZONES.findIndex((z) => z.id === selectedSite.id) : -1;
 
   const openInfo = (id) => {
@@ -164,7 +187,7 @@ export default function OrbitalHUD() {
       <header className="on-scene flex items-baseline justify-between gap-6">
         <div className="flex items-baseline gap-6">
           <div className="text-[15px] font-bold tracking-wide text-bone">ARES-V</div>
-          {!isDeploying && (
+          {!isInTransit && (
             <nav aria-label="Sections" className="pointer-events-auto flex items-baseline gap-5 text-[13px]">
               {NAV_ITEMS.map((item) => {
                 const isActive = activeModal === item.id;
@@ -187,15 +210,30 @@ export default function OrbitalHUD() {
           )}
         </div>
 
-        <div className="num hidden text-[11px] text-dim sm:block">
-          {isDeploying && selectedSite
-            ? `Descending to ${selectedSite.name}`
-            : 'Orbit 380 km · 1 grid unit = 1,000 km'}
+        <div className="flex items-center gap-3">
+          <div className="num hidden text-[11px] text-dim sm:block">
+            {isDeploying && selectedSite
+              ? `Descending to ${selectedSite.name}`
+              : isAscending && ascendFromSite
+              ? `Ascending from ${ascendFromSite.name}`
+              : isTransferring && transferFromSite && selectedSite
+              ? `Transferring: ${transferFromSite.name} -> ${selectedSite.name}`
+              : 'Orbit 380 km · 1 grid unit = 1,000 km'}
+          </div>
+          <button
+            type="button"
+            onClick={toggleAudioMuted}
+            aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'}
+            title={audioMuted ? 'Unmute audio' : 'Mute audio'}
+            className="icon-btn pointer-events-auto"
+          >
+            {audioMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4 text-bone" />}
+          </button>
         </div>
       </header>
 
       {/* Emergency abort notice (EVA ended at 0% O2) */}
-      {abortNotice && !isDeploying && (
+      {abortNotice && !isInTransit && (
         <div className="pointer-events-auto mx-auto mt-3 flex max-w-xl items-start gap-3 border-l-2 border-crit bg-panel px-3 py-2 text-[13px] text-bone">
           <span className="flex-1">{abortNotice}</span>
           <button
@@ -210,7 +248,7 @@ export default function OrbitalHUD() {
       )}
 
       {/* Landing site list */}
-      {!isDeploying && (
+      {!isInTransit && (
         <div className="pointer-events-auto fixed top-1/2 left-4 z-10 w-60 -translate-y-1/2 sm:left-6">
           <div className="label on-scene mb-2">Landing sites</div>
           <ol className="panel">
@@ -256,9 +294,9 @@ export default function OrbitalHUD() {
         </div>
       )}
 
-      {/* Descent reticle */}
+      {/* Descent / Ascent / Transfer reticle */}
       <div className="flex flex-1 items-center justify-center">
-        {isDeploying && selectedSite && (
+        {isInTransit && (selectedSite || ascendFromSite) && (
           <div className="on-scene flex flex-col items-center gap-3">
             <div className="relative flex h-16 w-16 items-center justify-center">
               <span className="absolute top-0 left-0 h-3 w-3 border-t border-l border-bone" />
@@ -267,24 +305,232 @@ export default function OrbitalHUD() {
               <span className="absolute right-0 bottom-0 h-3 w-3 border-r border-b border-bone" />
               <div className="h-1 w-1 bg-bone" />
             </div>
-            <div className="num text-[12px] text-bone">Alt {descentAltKm} km</div>
+            <div className="num text-[12px] text-bone">Alt {transitAltKm} km</div>
           </div>
         )}
       </div>
 
-      {/* About / Controls / Team */}
-      {!isDeploying && activeModal && (
+      {/* Expedition / About / Controls / Team */}
+      {!isInTransit && activeModal && (
         <Sheet
           eyebrow="ARES-V"
           title={
-            activeModal === 'ABOUT'
-              ? 'About the sim'
-              : activeModal === 'HOW_TO'
-                ? 'Controls'
-                : 'Team'
+            activeModal === 'EXPEDITION'
+              ? 'Expedition report'
+              : activeModal === 'ABOUT'
+                ? 'About the sim'
+                : activeModal === 'HOW_TO'
+                  ? 'Controls'
+                  : 'Team'
           }
           onClose={() => setActiveModal(null)}
         >
+          {activeModal === 'EXPEDITION' && (() => {
+            const totalPossible = LANDING_ZONES.reduce((sum, z) => sum + z.targets.length, 0);
+            const totalVaulted = LANDING_ZONES.reduce(
+              (sum, z) => sum + (vaultedSamples[z.id] || []).length,
+              0
+            );
+            const unlockedHeritage = LANDING_ZONES.reduce(
+              (sum, z) =>
+                sum +
+                (discoveredLandingSites[z.id] ? 1 : 0) +
+                (discoveredRovers[z.id] ? 1 : 0),
+              0
+            );
+            const evaMins = Math.floor((expeditionStats?.totalEvaSeconds || 0) / 60);
+            const evaSecs = Math.floor((expeditionStats?.totalEvaSeconds || 0) % 60);
+            const distM = expeditionStats?.totalDistanceMeters || 0;
+            const distLabel = distM >= 1000 ? `${(distM / 1000).toFixed(2)} km` : `${Math.round(distM)} m`;
+            const pct = totalPossible > 0 ? Math.round((totalVaulted / totalPossible) * 100) : 0;
+
+            const handleDownloadReport = () => {
+              const lines = [
+                '# ARES-V Expedition Report',
+                `Generated: ${new Date().toISOString()}`,
+                '',
+                '## Summary',
+                `- Cores vaulted: ${totalVaulted} / ${totalPossible} (${pct}%)`,
+                `- Heritage landmarks unlocked: ${unlockedHeritage} / ${LANDING_ZONES.length * 2}`,
+                `- Total EVA distance: ${distLabel}`,
+                `- Total EVA time: ${String(evaMins).padStart(2, '0')}:${String(evaSecs).padStart(2, '0')}`,
+                `- Peak radiation: ${(expeditionStats?.peakRadiationMSv ?? 0.61).toFixed(2)} mSv/d`,
+                `- Lowest suit core temp: ${(expeditionStats?.minBodyTempC ?? 37.0).toFixed(1)} °C`,
+                '',
+                '## Landing Zones',
+                ...LANDING_ZONES.map((z) => {
+                  const v = (vaultedSamples[z.id] || []).length;
+                  const siteOk = discoveredLandingSites[z.id] ? 'Unlocked' : 'Locked';
+                  const roverOk = discoveredRovers[z.id] ? 'Unlocked' : 'Locked';
+                  return `- **${z.name}** (${z.coordinates}): ${v}/${z.targets.length} cores · Sol 0 Site: ${siteOk} · Rover (${z.nasaRover?.shortName}): ${roverOk}`;
+                }),
+              ];
+              const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'ares-v-expedition-report.md';
+              a.click();
+              URL.revokeObjectURL(url);
+            };
+
+            return (
+              <div className="space-y-4 text-[13px] text-bone/90">
+                <div>
+                  <div className="mb-1.5 flex items-baseline justify-between text-[12px]">
+                    <span className="text-dim">Global core recovery</span>
+                    <span className="num text-bone">
+                      {totalVaulted} / {totalPossible} ({pct}%)
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden bg-rule">
+                    <div
+                      className="h-full bg-ok transition-all duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                  <div className="border border-rule bg-ink/50 p-2.5">
+                    <div className="label">Landmarks</div>
+                    <div className="num mt-0.5 text-[15px] text-bone">
+                      {unlockedHeritage} / {LANDING_ZONES.length * 2}
+                    </div>
+                  </div>
+                  <div className="border border-rule bg-ink/50 p-2.5">
+                    <div className="label">EVA distance</div>
+                    <div className="num mt-0.5 text-[15px] text-bone">{distLabel}</div>
+                  </div>
+                  <div className="border border-rule bg-ink/50 p-2.5">
+                    <div className="label">Surface time</div>
+                    <div className="num mt-0.5 text-[15px] text-bone">
+                      {String(evaMins).padStart(2, '0')}:{String(evaSecs).padStart(2, '0')}
+                    </div>
+                  </div>
+                  <div className="border border-rule bg-ink/50 p-2.5">
+                    <div className="label">Peak rad</div>
+                    <div className="num mt-0.5 text-[15px] text-bone">
+                      {(expeditionStats?.peakRadiationMSv ?? 0.61).toFixed(2)} mSv/d
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="label">Site breakdown</div>
+                  {LANDING_ZONES.map((z) => {
+                    const v = (vaultedSamples[z.id] || []).length;
+                    const siteDone = v >= z.targets.length;
+                    const siteOk = Boolean(discoveredLandingSites[z.id]);
+                    const roverOk = Boolean(discoveredRovers[z.id]);
+                    return (
+                      <div
+                        key={z.id}
+                        className="flex flex-wrap items-center justify-between gap-2 border border-rule bg-ink/40 px-3 py-2"
+                      >
+                        <div>
+                          <div className="font-semibold text-bone">{z.name}</div>
+                          <div className="mt-0.5 text-[11px] text-dim">
+                            Sol 0: <span className={siteOk ? 'text-ok' : 'text-faint'}>{siteOk ? 'Unlocked' : 'Locked'}</span>
+                            {' · '}
+                            {z.nasaRover?.shortName}: <span className={roverOk ? 'text-ok' : 'text-faint'}>{roverOk ? 'Unlocked' : 'Locked'}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`num text-[12px] ${siteDone ? 'text-ok' : 'text-bone'}`}>
+                            {v}/{z.targets.length} cores
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveModal(null);
+                              selectSite(z.id);
+                            }}
+                            className="btn px-2.5 py-1 text-[11px]"
+                          >
+                            Select
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadReport}
+                  className="btn btn-primary flex w-full items-center justify-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Export field report (.md)</span>
+                </button>
+
+                {/* Planetary Field Geologist Commendation Certificate */}
+                {(() => {
+                  const sitesUnlocked = LANDING_ZONES.filter((z) => discoveredLandingSites[z.id]).length;
+                  const roversUnlocked = LANDING_ZONES.filter((z) => discoveredRovers[z.id]).length;
+                  const certUnlocked =
+                    totalVaulted >= totalPossible &&
+                    sitesUnlocked >= LANDING_ZONES.length &&
+                    roversUnlocked >= LANDING_ZONES.length;
+                  const timeLabel = `${String(evaMins).padStart(2, '0')}:${String(evaSecs).padStart(2, '0')}`;
+                  const peakRadLabel = `${(expeditionStats?.peakRadiationMSv ?? 0.61).toFixed(2)} mSv/d`;
+
+                  if (!certUnlocked) {
+                    return (
+                      <div className="border border-rule bg-ink/50 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="label flex items-center gap-1.5 text-dim">
+                            <Lock className="h-3.5 w-3.5" />
+                            Field Geologist Certificate (Locked)
+                          </span>
+                          <span className="num text-[11px] text-faint">100% required</span>
+                        </div>
+                        <p className="mt-1.5 text-[12px] text-dim">
+                          Vault every core and inspect every Sol 0 touchdown monument and NASA rover across all four craters to earn your commendation.
+                        </p>
+                        <ul className="mt-3 space-y-1.5 text-[12px]">
+                          <li className="flex items-center justify-between">
+                            <span className="text-dim">Cores vaulted</span>
+                            <span className={`num ${totalVaulted >= totalPossible ? 'text-ok' : 'text-bone'}`}>
+                              {totalVaulted} / {totalPossible}
+                            </span>
+                          </li>
+                          <li className="flex items-center justify-between">
+                            <span className="text-dim">Sol 0 landing sites unlocked</span>
+                            <span className={`num ${sitesUnlocked >= LANDING_ZONES.length ? 'text-ok' : 'text-bone'}`}>
+                              {sitesUnlocked} / {LANDING_ZONES.length}
+                            </span>
+                          </li>
+                          <li className="flex items-center justify-between">
+                            <span className="text-dim">NASA rovers inspected</span>
+                            <span className={`num ${roversUnlocked >= LANDING_ZONES.length ? 'text-ok' : 'text-bone'}`}>
+                              {roversUnlocked} / {LANDING_ZONES.length}
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <MissionCertificate
+                      astronautName={astronautName}
+                      onChangeName={setAstronautName}
+                      totalVaulted={totalVaulted}
+                      totalPossible={totalPossible}
+                      sitesCount={sitesUnlocked}
+                      roversCount={roversUnlocked}
+                      distLabel={distLabel}
+                      timeLabel={timeLabel}
+                      peakRad={peakRadLabel}
+                    />
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
           {activeModal === 'ABOUT' && (
             <div className="space-y-5 text-[13px] leading-relaxed text-bone/90">
               <p>
@@ -443,7 +689,7 @@ export default function OrbitalHUD() {
       )}
 
       {/* Site briefing */}
-      {!isDeploying && selectedSite && (
+      {!isInTransit && selectedSite && (
         <Sheet
           eyebrow={`Landing site ${String(siteIndex + 1).padStart(2, '0')}`}
           title={<span className="place text-[26px] leading-tight">{selectedSite.name}</span>}
@@ -561,7 +807,7 @@ export default function OrbitalHUD() {
       )}
 
       {/* Map layer switch */}
-      {!isDeploying ? (
+      {!isInTransit ? (
         <div className="flex flex-col items-center gap-2">
           <div className="on-scene h-4 text-center text-[11px] text-dim">
             {orbitalLayer !== 'OPTICAL' && activeLayerObj

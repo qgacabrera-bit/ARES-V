@@ -67,6 +67,18 @@ export const LANDING_ZONES = [
     hazard: '22°–29° delta front scarps & boulder fields',
     baseRadiation: 0.61,
     baseElevation: -2570,
+    siteDossier: {
+      era: 'Noachian-Hesperian (~3.5–3.8 Ga)',
+      historicalSignificance:
+        'Jezero Crater hosted an ancient lake fed by the Neretva Vallis river system, depositing a fan-shaped delta of clay and carbonate sediments. In 2021, NASA Perseverance touched down at Octavia E. Butler Landing and deployed Ingenuity for the first powered flight on another planet.',
+      scientificImportance:
+        'Carbonate-rich shoreline deposits and fine-grained mudstones are among the best environments on Mars for trapping and preserving ancient microbial biosignatures. Returning these cores establishes a gold-standard geological timeline of when Mars transitioned from a wet world to a cold desert.',
+      keyDiscoveries: [
+        'Three Forks depot: First off-world sample cache assembled for Mars Sample Return.',
+        'Ingenuity Mars Helicopter: 72 aerial reconnaissance flights scouting delta scarps.',
+        'Bright Angel & Margin Unit: Organic-bearing mudstones and magnesium-carbonate rims.',
+      ],
+    },
     marsTrekBookmark: {
       name: 'Perseverance Landing Site',
       itemType: 'bookmark',
@@ -92,6 +104,8 @@ export const LANDING_ZONES = [
       landingName: 'Octavia E. Butler Landing (Sol 0)',
       landingCoordinates: '18.4446°N, 77.4509°E',
       landingDate: 'Feb 18, 2021 (Sol 0)',
+      landingStory:
+        'Perseverance touched down via Skycrane on the fractured crater floor of Jezero Crater, just west of the ancient Neretva Vallis delta. Named after sci-fi pioneer Octavia E. Butler, the site also hosted Wright Brothers Field, where the Ingenuity helicopter achieved the first powered, controlled flight on another planet.',
       landingPosition: [24.0, -4.0],
       totalOdometryKm: 45.25,
       latestSol: 2022,
@@ -341,6 +355,18 @@ export const LANDING_ZONES = [
     hazard: 'Steep 28° sulfate yardang slopes & cemented veins',
     baseRadiation: 0.64,
     baseElevation: -4501,
+    siteDossier: {
+      era: 'Noachian-Hesperian (~3.2–3.8 Ga)',
+      historicalSignificance:
+        'Gale Crater is a 154 km impact basin dominated by Aeolis Mons (Mount Sharp), a 5.5 km layered mountain recording hundreds of millions of years of Martian climate change. Curiosity has climbed its basal strata since 2012, turning the mountain into an open book of planetary history.',
+      scientificImportance:
+        'Curiosity documented extensive boxwork ridges in 2025: hardened mineral fractures formed when Mars’s last subterranean groundwater flowed through drying sulfate bedrock. Studying these veins reveals how long subsurface habitable niches persisted after surface lakes vanished.',
+      keyDiscoveries: [
+        'Yellowknife Bay: First definitive proof of a once-habitable freshwater lakebed.',
+        'Clay-to-Sulfate Transition: Direct stratigraphic record of Mars’s global drying.',
+        'Mount Sharp Boxwork (2025): Late-stage mineralized groundwater fracture networks.',
+      ],
+    },
     marsTrekBookmark: {
       name: 'Curiosity Landing Site',
       itemType: 'bookmark',
@@ -366,6 +392,8 @@ export const LANDING_ZONES = [
       landingName: 'Bradbury Landing (Sol 0)',
       landingCoordinates: '4.5895°S, 137.4416°E',
       landingDate: 'Aug 6, 2012 (Sol 0)',
+      landingStory:
+        'Curiosity’s Skycrane set the 899 kg rover down on Aeolis Palus near the Peace Vallis alluvial fan. Named in honor of author Ray Bradbury, Bradbury Landing served as the starting gate for Curiosity’s multi-decade climb up Mount Sharp’s clay-to-sulfate sedimentary stack.',
       landingPosition: [4.5, -28.0],
       totalOdometryKm: 38.32,
       latestSol: 5073,
@@ -615,6 +643,18 @@ export const LANDING_ZONES = [
     hazard: 'Loose ripple sand traps ("Purgatory Dune") & 24° crater wall slopes',
     baseRadiation: 0.62,
     baseElevation: -1440,
+    siteDossier: {
+      era: 'Late Noachian (~3.7 Ga)',
+      historicalSignificance:
+        'Opportunity landed inside Eagle Crater in 2004 on a 90-sol mission and operated for nearly 15 years, covering an off-world marathon distance of 45.16 km across Meridiani Planum to Endeavour Crater.',
+      scientificImportance:
+        'Meridiani Planum provided the first in-situ ground truth that liquid water once soaked Mars’s surface, preserved as cross-bedded sulfate sandstones and hematite concretions ("blueberries"). Endeavour’s ancient rim also exposes neutral-pH clays older than the acidic plains.',
+      keyDiscoveries: [
+        'Hematite Spherules: Mineral concretions precipitated in water-saturated sediments.',
+        'Victoria & Endeavour Craters: Deep stratigraphic windows into pre-sulfate clay crusts.',
+        '45.16 km Traverse: Longest single-rover geological survey in planetary exploration.',
+      ],
+    },
     marsTrekBookmark: {
       name: 'Opportunity Landing Site',
       itemType: 'bookmark',
@@ -640,6 +680,8 @@ export const LANDING_ZONES = [
       landingName: 'Challenger Memorial Station (Eagle Crater, Sol 0)',
       landingCoordinates: '1.9483°S, 354.4742°E',
       landingDate: 'Jan 25, 2004 (Sol 1)',
+      landingStory:
+        'In a celebrated "interplanetary hole-in-one," Opportunity bounced inside its airbag cocoon directly into 22-meter-wide Eagle Crater. Dedicated to the Space Shuttle Challenger crew, the site immediately exposed layered sulfate bedrock outcrops within arm’s reach of the lander.',
       landingPosition: [-18.0, -36.0],
       totalOdometryKm: 45.16,
       latestSol: 5111,
@@ -831,6 +873,18 @@ export const LANDING_ZONES = [
     hazard: '25° Husband Hill talus slopes & hidden sulfate-sand wheel traps ("Troy")',
     baseRadiation: 0.65,
     baseElevation: -1940,
+    siteDossier: {
+      era: 'Noachian-Early Hesperian (~3.6 Ga)',
+      historicalSignificance:
+        'Spirit landed in Gusev Crater in 2004 expecting lakebeds, found basaltic lava plains instead, and trekked 7.73 km to the older Columbia Hills, where it uncovered unmistakable signs of ancient volcanic hot springs.',
+      scientificImportance:
+        'At Home Plate, Spirit’s stuck right-front wheel churned up nearly pure opaline silica, a mineral formed in hydrothermal steam vents and hot springs. On Earth, similar silica sinter deposits teem with fossilized microbial mats, making Gusev a top astrobiology analog.',
+      keyDiscoveries: [
+        'Home Plate Opaline Silica: ~90% pure silica formed by hydrothermal water activity.',
+        'Comanche Outcrop: Magnesium-iron carbonate rocks proving near-neutral pH water.',
+        'Husband Hill Summit: First panoramic survey from the crest of a Martian hill.',
+      ],
+    },
     marsTrekBookmark: {
       name: 'Spirit Landing Site',
       itemType: 'bookmark',
@@ -856,6 +910,8 @@ export const LANDING_ZONES = [
       landingName: 'Columbia Memorial Station (Sol 0)',
       landingCoordinates: '14.5692°S, 175.4729°E',
       landingDate: 'Jan 4, 2004 (Sol 1)',
+      landingStory:
+        'Spirit bounced to rest on the dark olivine-basalt plains of Gusev Crater and was dedicated to the crew of Space Shuttle Columbia. When the flat plains proved volcanic rather than lacustrine, Spirit drove 3 km across the floor to ascend the ancient Columbia Hills.',
       landingPosition: [-16.0, -10.5],
       totalOdometryKm: 7.73,
       latestSol: 2210,

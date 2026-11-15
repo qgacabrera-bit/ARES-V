@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
-import { EVA_LAYERS } from '../../data/landingZones';
+import { CheckCircle2, Lock, X } from 'lucide-react';
+import { EVA_LAYERS, LANDING_ZONES, LANDING_ZONES_BY_ID } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
 import { computeSafeTraversePath } from '../../utils/pathfinding';
 import { fetchLiveRoverTraverse, getMarsAlbedoCrop } from '../../utils/roverPathLoader';
@@ -28,6 +28,7 @@ const LAYER_SEGMENT_LABELS = {
 const SLATE_TABS = [
   { id: 'MAP', label: 'Map and route' },
   { id: 'SPECTRA', label: 'Samples' },
+  { id: 'HERITAGE', label: 'Sites & Rovers' },
 ];
 
 function toSvgCoords(wx, wz, centerX = 0, centerZ = 0) {
@@ -54,6 +55,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
   const activeRoute = useMissionStore((s) => s.activeRoute);
   const scanningState = useMissionStore((s) => s.scanningState);
   const discoveredRovers = useMissionStore((s) => s.discoveredRovers);
+  const discoveredLandingSites = useMissionStore((s) => s.discoveredLandingSites);
   const customPinpoint = useMissionStore((s) => s.customPinpoint);
 
   const setWristMapOpen = useMissionStore((s) => s.setWristMapOpen);
@@ -75,10 +77,12 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
   const [liveTraverseData, setLiveTraverseData] = useState(null);
   const [selectedPinpointInfo, setSelectedPinpointInfo] = useState(null);
   const [mapTooltip, setMapTooltip] = useState(null);
+  const [heritageSiteId, setHeritageSiteId] = useState(site.id);
 
   useEffect(() => {
     setSelectedPinpointInfo(null);
     setMapTooltip(null);
+    setHeritageSiteId(site.id);
   }, [site.id]);
 
   useEffect(() => {
@@ -502,7 +506,8 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
 
         <div role="tablist" className="mt-4 flex gap-6 border-b border-rule px-5 text-[13px]">
           {SLATE_TABS.map((tab) => {
-            const active = (slateTab === 'SPECTRA' ? 'SPECTRA' : 'MAP') === tab.id;
+            const currentTab = SLATE_TABS.some((t) => t.id === slateTab) ? slateTab : 'MAP';
+            const active = currentTab === tab.id;
             return (
               <button
                 key={tab.id}
@@ -523,7 +528,7 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
         </div>
 
         {/* Map and route */}
-        {slateTab !== 'SPECTRA' && (
+        {slateTab !== 'SPECTRA' && slateTab !== 'HERITAGE' && (
           <div className="grid grid-cols-1 items-stretch gap-5 p-5 md:grid-cols-5">
             <div className="md:col-span-3">
               <div className="relative aspect-square w-full overflow-hidden border border-rule bg-ink">
@@ -1061,6 +1066,215 @@ export default function FieldSlateHUD({ site, activeTarget, isActiveCollected })
             </div>
           </div>
         )}
+
+        {/* Sites & Rovers Heritage Archive */}
+        {slateTab === 'HERITAGE' && (() => {
+          const heritageZone = LANDING_ZONES_BY_ID[heritageSiteId] || site;
+          const hRover = heritageZone.nasaRover;
+          const isSiteUnlocked = Boolean(discoveredLandingSites[heritageZone.id]);
+          const isRoverUnlocked = Boolean(discoveredRovers[heritageZone.id]);
+          const isCurrentArea = heritageZone.id === site.id;
+          const landingCoords = hRover?.landingPosition || hRover?.traversePoints?.[0] || null;
+
+          return (
+            <div className="max-h-[66vh] overflow-y-auto p-5">
+              {/* Area selector */}
+              <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-rule pb-3 text-[13px]">
+                {LANDING_ZONES.map((zone) => {
+                  const selected = zone.id === heritageZone.id;
+                  const unlockedCount =
+                    (discoveredLandingSites[zone.id] ? 1 : 0) +
+                    (discoveredRovers[zone.id] ? 1 : 0);
+                  return (
+                    <button
+                      key={zone.id}
+                      type="button"
+                      onClick={() => setHeritageSiteId(zone.id)}
+                      aria-pressed={selected}
+                      className={`flex items-center gap-1.5 border-b-2 pb-1 transition-colors ${
+                        selected
+                          ? 'border-bone text-bone'
+                          : 'border-transparent text-dim hover:text-bone'
+                      }`}
+                    >
+                      <span>{zone.shortName}</span>
+                      <span
+                        className={`num text-[11px] ${
+                          unlockedCount === 2 ? 'text-ok' : unlockedCount === 1 ? 'text-warn' : 'text-faint'
+                        }`}
+                      >
+                        {unlockedCount}/2
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <h3 className="place text-[18px] leading-tight text-bone">{heritageZone.name}</h3>
+                  <div className="mt-0.5 text-[12px] text-dim">{heritageZone.subtitle}</div>
+                </div>
+                <div className="num text-[11px] text-dim">{heritageZone.coordinates}</div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                {/* Landing Site Card */}
+                <div className="flex flex-col justify-between border border-rule bg-ink/60 p-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="label text-warn">Sol 0 Landing Site</span>
+                      {isSiteUnlocked ? (
+                        <span className="flex items-center gap-1 text-[11px] text-ok">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Unlocked
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[11px] text-faint">
+                          <Lock className="h-3.5 w-3.5" />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+
+                    {isSiteUnlocked && hRover ? (
+                      <div className="mt-2.5 space-y-2.5">
+                        <div>
+                          <div className="text-[15px] font-bold text-bone">
+                            {hRover.landingName}
+                          </div>
+                          <div className="num mt-0.5 text-[11px] text-dim">
+                            {hRover.landingCoordinates} · {hRover.landingDate}
+                          </div>
+                        </div>
+                        <p className="text-[12px] leading-relaxed text-bone/90">
+                          {hRover.landingStory || hRover.keyDiscoveries}
+                        </p>
+                        {heritageZone.siteDossier?.era && (
+                          <div className="border-t border-rule/70 pt-2 text-[11px] text-dim">
+                            Geologic era: <span className="text-bone">{heritageZone.siteDossier.era}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        <div className="text-[14px] font-semibold text-dim">
+                          Touchdown archive locked
+                        </div>
+                        <p className="text-[12px] leading-relaxed text-faint">
+                          Deploy to {heritageZone.name} and inspect the Sol 0 touchdown monument (<kbd>E</kbd> or click) to unlock this landing site’s history.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {isCurrentArea && landingCoords && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = computeSafeTraversePath(
+                          telemetry.position,
+                          landingCoords,
+                          site.terrainProfile
+                        );
+                        setActiveRoute({
+                          targetId: 'rover-landing-sol0',
+                          targetName: hRover?.landingName || 'Sol 0 Touchdown Monument',
+                          ...res,
+                        });
+                        setSelectedPinpointInfo(null);
+                        setSlateTab('MAP');
+                      }}
+                      className="btn mt-4 w-full"
+                    >
+                      Plot route to landing site
+                    </button>
+                  )}
+                </div>
+
+                {/* Rover Card */}
+                <div className="flex flex-col justify-between border border-rule bg-ink/60 p-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="label text-accent">NASA Surface Rover</span>
+                      {isRoverUnlocked ? (
+                        <span className="flex items-center gap-1 text-[11px] text-ok">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Unlocked
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[11px] text-faint">
+                          <Lock className="h-3.5 w-3.5" />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+
+                    {isRoverUnlocked && hRover ? (
+                      <div className="mt-2.5 space-y-2.5">
+                        <div>
+                          <div className="text-[15px] font-bold text-bone">{hRover.name}</div>
+                          <div className="num mt-0.5 text-[11px] text-dim">
+                            {hRover.code} · {hRover.status}
+                          </div>
+                        </div>
+                        <p className="text-[12px] leading-relaxed text-bone/90">
+                          {hRover.keyDiscoveries}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 border-t border-rule/70 pt-2 text-[11px]">
+                          <div>
+                            <div className="text-faint">ODOMETRY</div>
+                            <div className="num text-bone">{hRover.totalOdometryKm} km</div>
+                          </div>
+                          <div>
+                            <div className="text-faint">LATEST SOL</div>
+                            <div className="num text-bone">Sol {hRover.latestSol}</div>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-dim">
+                          <span className="text-faint">Payload: </span>
+                          {hRover.instruments}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        <div className="text-[14px] font-semibold text-dim">
+                          Rover telemetry locked
+                        </div>
+                        <p className="text-[12px] leading-relaxed text-faint">
+                          Approach and inspect {hRover?.shortName || 'the NASA rover'} at {heritageZone.name} (<kbd>E</kbd> or click) to unlock its mission dossier.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {isCurrentArea && hRover && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = computeSafeTraversePath(
+                          telemetry.position,
+                          hRover.position,
+                          site.terrainProfile
+                        );
+                        setActiveRoute({
+                          targetId: hRover.id,
+                          targetName: hRover.name,
+                          ...res,
+                        });
+                        setSelectedPinpointInfo(null);
+                        setSlateTab('MAP');
+                      }}
+                      className="btn mt-4 w-full"
+                    >
+                      Plot route to {hRover.shortName}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Data layer switch */}
         <div className="mt-auto flex border-t border-rule">

@@ -20,8 +20,9 @@ export default function NasaRoverSite({ site, terrainVersion }) {
   const wristMapOpen = useMissionStore((s) => s.wristMapOpen);
   const discoveredRovers = useMissionStore((s) => s.discoveredRovers);
   const discoverRover = useMissionStore((s) => s.discoverRover);
-  const routeToUnexploredFrontier = useMissionStore((s) => s.routeToUnexploredFrontier);
+  const setRoverModalOpen = useMissionStore((s) => s.setRoverModalOpen);
   const setCustomPinpoint = useMissionStore((s) => s.setCustomPinpoint);
+  const setLandingMonumentModalOpen = useMissionStore((s) => s.setLandingMonumentModalOpen);
 
   const [roverHovered, setRoverHovered] = useState(false);
   const [landingHovered, setLandingHovered] = useState(false);
@@ -78,6 +79,10 @@ export default function NasaRoverSite({ site, terrainVersion }) {
             setLandingHovered(false);
             document.body.style.cursor = 'auto';
           }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setLandingMonumentModalOpen(true);
+          }}
         >
           {/* Invisible Hover Hit Sphere */}
           <mesh position={[0, 0.5, 0]}>
@@ -98,9 +103,11 @@ export default function NasaRoverSite({ site, terrainVersion }) {
             <meshStandardMaterial color="#eab308" roughness={0.35} metalness={0.75} />
           </mesh>
           {showLandingLabel && (
-            <Html position={[0, 1.35, 0]} center distanceFactor={16}>
+            <Html position={[0, 1.35, 0]} center style={{ pointerEvents: 'none' }}>
               <div className="scene-tag pointer-events-none">
-                <div className="font-bold">{rover.landingName || 'Rover landing, Sol 0'}</div>
+                <div className="font-bold">
+                  {rover.landingName || 'Rover landing, Sol 0'} · [E] Inspect
+                </div>
                 <div className="text-dim">
                   {rover.landingCoordinates} · {rover.landingDate}
                 </div>
@@ -128,7 +135,7 @@ export default function NasaRoverSite({ site, terrainVersion }) {
         onClick={(e) => {
           e.stopPropagation();
           discoverRover(site.id);
-          routeToUnexploredFrontier();
+          setRoverModalOpen(true);
         }}
       >
         {/* Ground tire tracks / dust disturbance */}

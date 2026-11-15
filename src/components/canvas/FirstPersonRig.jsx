@@ -29,6 +29,7 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
   });
   const telemetryTimerRef = useRef(0);
   const physioDtRef = useRef(0);
+  const expeditionAccumRef = useRef({ dist: 0, dt: 0, prevX: null, prevZ: null });
   const headBobPhaseRef = useRef(0);
   const velocityRef = useRef({ x: 0, z: 0 });
   const abortTriggeredRef = useRef(false);
@@ -269,6 +270,16 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
         camera.position.z = roverPos[1] + rDz * pushScale;
       }
       storeState.setRoverProximity(roverDist <= 5.0, roverDist);
+      const monumentPos = site.nasaRover.landingPosition || site.nasaRover.traversePoints?.[0];
+      if (monumentPos) {
+        const monumentDist = Math.hypot(
+          camera.position.x - monumentPos[0],
+          camera.position.z - monumentPos[1]
+        );
+        storeState.setLandingMonumentProximity(monumentDist <= 4.0);
+      } else {
+        storeState.setLandingMonumentProximity(false);
+      }
       const roverY = getTerrainHeightAt(roverPos[0], roverPos[1], site.terrainProfile);
       toObjVec
         .set(roverPos[0] - camera.position.x, roverY + 1.1 - camera.position.y, roverPos[1] - camera.position.z)
@@ -460,6 +471,20 @@ export default function FirstPersonRig({ site, terrainVersion, onTargetDistances
           heaterReserve: Number(nextHeater.toFixed(2)),
           bodyTempC: Number(nextBodyTemp.toFixed(2)),
         });
+
+        const exp = expeditionAccumRef.current;
+        if (exp.prevX !== null && exp.prevZ !== null) {
+          const stepDist = Math.hypot(camera.position.x - exp.prevX, camera.position.z - exp.prevZ);
+          if (stepDist < 10) exp.dist += stepDist;
+        }
+        exp.prevX = camera.position.x;
+        exp.prevZ = camera.position.z;
+        exp.dt += pdt;
+        if (exp.dt >= 0.5) {
+          storeState.recordExpeditionTick(exp.dist, exp.dt, localRad, nextBodyTemp);
+          exp.dist = 0;
+          exp.dt = 0;
+        }
       }
     }
   });

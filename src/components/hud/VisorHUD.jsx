@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Volume2, VolumeX, X } from 'lucide-react';
 import { LANDING_ZONES, LANDING_ZONES_BY_ID } from '../../data/landingZones';
 import { useMissionStore } from '../../store/useMissionStore';
+import {
+  playCommsChirp,
+  playHeartbeat,
+  playSuitBreath,
+  playWarningBeep,
+} from '../../utils/missionAudio';
 import FieldSlateHUD from './FieldSlateHUD';
 
 function getDirectionArrow(deltaDeg) {
@@ -109,9 +115,8 @@ function CompassStrip({
             <span
               key={t.label}
               style={{ left: `${pct}%` }}
-              className={`absolute top-0 -translate-x-1/2 select-none ${
-                t.label.length === 1 ? 'font-bold text-bone' : 'text-bone/55'
-              }`}
+              className={`absolute top-0 -translate-x-1/2 select-none ${t.label.length === 1 ? 'font-bold text-bone' : 'text-bone/55'
+                }`}
             >
               {t.label}
             </span>
@@ -130,9 +135,8 @@ function CompassStrip({
           <span
             style={{ left: `${roverNav.pct}%` }}
             title={rover.name}
-            className={`absolute bottom-0.5 h-1.5 w-1.5 -translate-x-1/2 border border-bone ${
-              isRoverDiscovered ? 'bg-bone' : 'bg-transparent'
-            }`}
+            className={`absolute bottom-0.5 h-1.5 w-1.5 -translate-x-1/2 border border-bone ${isRoverDiscovered ? 'bg-bone' : 'bg-transparent'
+              }`}
           />
         )}
 
@@ -209,6 +213,16 @@ export default function VisorHUD() {
   const setAreaCompleteModalOpen = useMissionStore((s) => s.setAreaCompleteModalOpen);
   const switchAreaFromEva = useMissionStore((s) => s.switchAreaFromEva);
   const returnToOrbit = useMissionStore((s) => s.returnToOrbit);
+  const nearLandingMonument = useMissionStore((s) => s.nearLandingMonument);
+  const landingMonumentModalOpen = useMissionStore((s) => s.landingMonumentModalOpen);
+  const setLandingMonumentModalOpen = useMissionStore((s) => s.setLandingMonumentModalOpen);
+  const roverModalOpen = useMissionStore((s) => s.roverModalOpen);
+  const setRoverModalOpen = useMissionStore((s) => s.setRoverModalOpen);
+  const setSlateTab = useMissionStore((s) => s.setSlateTab);
+  const setWristMapOpen = useMissionStore((s) => s.setWristMapOpen);
+  const setCustomPinpoint = useMissionStore((s) => s.setCustomPinpoint);
+  const audioMuted = useMissionStore((s) => s.audioMuted);
+  const toggleAudioMuted = useMissionStore((s) => s.toggleAudioMuted);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commsMessage, setCommsMessage] = useState(null);
@@ -221,9 +235,44 @@ export default function VisorHUD() {
 
   useEffect(() => {
     if (!commsMessage) return undefined;
+    playCommsChirp();
     const timer = setTimeout(() => setCommsMessage(null), 6000);
     return () => clearTimeout(timer);
   }, [commsMessage]);
+
+  useEffect(() => {
+    if (audioMuted) return undefined;
+    let breathTick = 0;
+    let warnTick = 0;
+    const interval = setInterval(() => {
+      const state = useMissionStore.getState();
+      if (state.viewMode !== 'EVA' || state.isTransitioning || state.audioMuted) return;
+      const stamina01 = 1 - Math.min(1, Math.max(0, state.physiology.stamina / 100));
+      const pack01 = Math.min(1, state.carriedMassKg / (state.maxPackMassKg || 25));
+      const exertion01 = Math.min(1, stamina01 * 0.7 + pack01 * 0.45);
+
+      breathTick += 1;
+      const breathPeriod = exertion01 > 0.55 ? 2 : 3;
+      if (breathTick % breathPeriod === 0) {
+        playSuitBreath(exertion01);
+      }
+
+      if (exertion01 > 0.35 || state.physiology.oxygen < 30) {
+        playHeartbeat(Math.max(exertion01, state.physiology.oxygen < 30 ? 0.8 : 0));
+      }
+
+      if (state.physiology.oxygen <= 22 || state.physiology.bodyTempC <= 35.4) {
+        warnTick += 1;
+        if (warnTick % 7 === 1) {
+          playWarningBeep();
+        }
+      } else {
+        warnTick = 0;
+      }
+    }, 800);
+
+    return () => clearInterval(interval);
+  }, [audioMuted]);
 
   useEffect(() => {
     if (!landerStatusMessage) return undefined;
@@ -257,6 +306,108 @@ export default function VisorHUD() {
   const oxyPct = Math.max(0, Math.min(100, physiology?.oxygen ?? 100));
   const thermPct = Math.max(0, Math.min(100, physiology?.heaterReserve ?? 100));
   const stamPct = Math.max(0, Math.min(100, physiology?.stamina ?? 100));
+  const bodyTempC = physiology?.bodyTempC ?? 37.0;
+
+  const loadRatio = Math.min(1, carriedMassKg / (maxPackMassKg || 25));
+  const speedPenaltyPct = Math.round(Math.pow(loadRatio, 1.1) * 18);
+  const effectiveSpeedMs = Math.max(2.5, 5.6 * (1 - Math.pow(loadRatio, 1.1) * 0.18));
+  const returnTimeSec = (landerDistance / effectiveSpeedMs) * 1.25;
+  const sampleBurnMult = 1 + carriedSamples.length * 0.12;
+  const returnO2Cost = 0.22 * 1.28 * sampleBurnMult * returnTimeSec * 1.25;
+  const returnO2Margin = Math.round(oxyPct - returnO2Cost);
+
+  const suitAdvisory = useMemo(() => {
+    const flags = [];
+    if (loadRatio >= 0.72) flags.push(`Heavy pack (${carriedMassKg.toFixed(1)}kg, -${speedPenaltyPct}% spd)`);
+    if (stamPct < 35) flags.push(`Fatigue (${Math.round(stamPct)}%)`);
+    if (thermPct < 28 || bodyTempC < 35.6) flags.push(`Cold (${bodyTempC.toFixed(1)}°C)`);
+    if (telemetry.slope > 20) flags.push(`Steep ${Math.round(telemetry.slope)}°`);
+
+    if (oxyPct < 25 || returnO2Margin < 15) {
+      return {
+        level: 'CRITICAL',
+        dotClass: 'bg-danger animate-pulse',
+        badgeClass: 'text-danger',
+        message: `O₂ critical (${Math.round(oxyPct)}%) — return to ship immediately to resupply`,
+        meta: `Ret margin ${returnO2Margin}% · ${Math.round(landerDistance)}m`,
+        flags,
+      };
+    }
+    if (stamPct < 25) {
+      return {
+        level: 'CAUTION',
+        dotClass: 'bg-warn animate-pulse',
+        badgeClass: 'text-warn',
+        message: `Getting tired quickly (${Math.round(stamPct)}% stam) — pause & rest a moment`,
+        meta: loadRatio >= 0.65 ? `Heavy pack · ${Math.round(landerDistance)}m to ship` : `Ret +${returnO2Margin}% O₂`,
+        flags,
+      };
+    }
+    if (loadRatio >= 0.78) {
+      return {
+        level: 'ADVISORY',
+        dotClass: 'bg-warn',
+        badgeClass: 'text-warn',
+        message: `Heavy package (${carriedMassKg.toFixed(1)}/${maxPackMassKg} kg, -${speedPenaltyPct}% spd) — offload cores at lander`,
+        meta: `Ret +${returnO2Margin}% O₂ · ${Math.round(landerDistance)}m`,
+        flags,
+      };
+    }
+    if (thermPct < 25 || bodyTempC < 35.5) {
+      return {
+        level: 'CAUTION',
+        dotClass: 'bg-warn',
+        badgeClass: 'text-warn',
+        message: `Suit thermal low (${bodyTempC.toFixed(1)}°C) — keep moving or recharge at ship`,
+        meta: `Heater ${Math.round(thermPct)}% · ${Math.round(landerDistance)}m`,
+        flags,
+      };
+    }
+    if (oxyPct < 45 || returnO2Margin < 32) {
+      return {
+        level: 'ADVISORY',
+        dotClass: 'bg-warn',
+        badgeClass: 'text-warn',
+        message: `O₂ reserve moderate (${Math.round(oxyPct)}%) — plan return to ship soon`,
+        meta: `Ret +${returnO2Margin}% O₂ · ${Math.round(landerDistance)}m`,
+        flags,
+      };
+    }
+    if (telemetry.slope > 22) {
+      return {
+        level: 'ADVISORY',
+        dotClass: 'bg-warn',
+        badgeClass: 'text-warn',
+        message: `Steep terrain (${Math.round(telemetry.slope)}°) — traverse diagonally to save stamina`,
+        meta: `Stam ${Math.round(stamPct)}% · Ret +${returnO2Margin}% O₂`,
+        flags,
+      };
+    }
+    return {
+      level: 'NOMINAL',
+      dotClass: 'bg-ok',
+      badgeClass: 'text-ok',
+      message:
+        carriedSamples.length > 0
+          ? `Carrying ${carriedSamples.length} core${carriedSamples.length > 1 ? 's' : ''} (${carriedMassKg.toFixed(1)} kg) — pace steady`
+          : 'Suit systems balanced — cleared for surface traverse',
+      meta: `Ret +${returnO2Margin}% O₂ · ${Math.round(landerDistance)}m`,
+      flags,
+    };
+  }, [
+    oxyPct,
+    stamPct,
+    thermPct,
+    bodyTempC,
+    loadRatio,
+    carriedMassKg,
+    maxPackMassKg,
+    speedPenaltyPct,
+    returnO2Margin,
+    landerDistance,
+    telemetry.slope,
+    carriedSamples.length,
+  ]);
 
   const site = LANDING_ZONES_BY_ID[selectedSiteId] || LANDING_ZONES_BY_ID.jezero;
   const collectedIds = collectedSamples[site.id] || [];
@@ -324,7 +475,6 @@ export default function VisorHUD() {
   const fatigueSeverity = isLowStamina ? Math.min(1, Math.max(0.25, (30 - physiology.stamina) / 22)) : 0;
   const hypoxiaClearRadius = Math.round(74 - hypoxiaSeverity * 12);
 
-  const loadRatio = Math.min(1, carriedMassKg / (maxPackMassKg || 25));
   const isHeavyPack = loadRatio >= 0.4;
 
   const hasInteractFocus =
@@ -530,9 +680,8 @@ export default function VisorHUD() {
       <div className="relative flex flex-1 items-center justify-center">
         <div className="flex flex-col items-center">
           <div
-            className={`relative flex items-center justify-center transition-all duration-200 ${
-              hasInteractFocus ? 'h-9 w-9' : 'h-5 w-5'
-            }`}
+            className={`relative flex items-center justify-center transition-all duration-200 ${hasInteractFocus ? 'h-9 w-9' : 'h-5 w-5'
+              }`}
           >
             <div className={`h-1 w-1 rounded-full ${hasInteractFocus ? 'bg-hivis' : 'bg-bone/70'}`} />
             {hasInteractFocus ? (
@@ -588,12 +737,23 @@ export default function VisorHUD() {
               type="button"
               onClick={() => {
                 discoverRover(site.id);
-                routeToUnexploredFrontier();
+                setRoverModalOpen(true);
               }}
               className={PROMPT_CLASS}
             >
               <kbd>E</kbd>
-              <span>Sync with {rover.name}</span>
+              <span>Inspect {rover.name}</span>
+            </button>
+          )}
+
+          {nearLandingMonument && !nearRover && !nearLander && !activeTarget && !scanningState.active && rover && (
+            <button
+              type="button"
+              onClick={() => setLandingMonumentModalOpen(true)}
+              className={PROMPT_CLASS}
+            >
+              <kbd>E</kbd>
+              <span>Inspect {rover.landingName || 'Sol 0 Landing Site'}</span>
             </button>
           )}
 
@@ -616,22 +776,33 @@ export default function VisorHUD() {
 
       {/* Menu button */}
       {!wristMapOpen && !menuOpen && !areaCompleteModalOpen && (
-        <button
-          type="button"
-          onClick={() => {
-            if (document.pointerLockElement) {
-              try {
-                document.exitPointerLock();
-              } catch {
-                // ignore
+        <div className="pointer-events-auto fixed bottom-6 left-6 z-20 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (document.pointerLockElement) {
+                try {
+                  document.exitPointerLock();
+                } catch {
+                  // ignore
+                }
               }
-            }
-            setMenuOpen(true);
-          }}
-          className="btn pointer-events-auto fixed bottom-6 left-6 z-20 bg-ink/85"
-        >
-          Menu
-        </button>
+              setMenuOpen(true);
+            }}
+            className="btn bg-ink/85"
+          >
+            Menu
+          </button>
+          <button
+            type="button"
+            onClick={toggleAudioMuted}
+            aria-label={audioMuted ? 'Unmute suit audio' : 'Mute suit audio'}
+            title={audioMuted ? 'Unmute suit audio' : 'Mute suit audio'}
+            className="btn bg-ink/85 px-2.5"
+          >
+            {audioMuted ? <VolumeX className="h-4 w-4 text-dim" /> : <Volume2 className="h-4 w-4 text-bone" />}
+          </button>
+        </div>
       )}
 
       {/* Mission menu */}
@@ -667,6 +838,19 @@ export default function VisorHUD() {
               Return to orbit
             </button>
 
+            {isAllSiteVaulted && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setAreaCompleteModalOpen(true);
+                }}
+                className="btn mt-2 w-full"
+              >
+                View completed site dossier
+              </button>
+            )}
+
             <div className="label mt-6 mb-1">Move to another site</div>
             <SiteList
               zones={LANDING_ZONES}
@@ -685,15 +869,22 @@ export default function VisorHUD() {
       {areaCompleteModalOpen && (
         <div
           onClick={() => setAreaCompleteModalOpen(false)}
-          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/65 p-4 backdrop-blur-xs"
         >
-          <div onClick={(e) => e.stopPropagation()} className="panel w-full max-w-md p-6 text-bone">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="panel max-h-[88vh] w-full max-w-xl overflow-y-auto p-6 text-bone"
+          >
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="label mb-1 text-ok">
                   Site complete · {site.targets.length} of {site.targets.length} cores vaulted
                 </div>
                 <h2 className="place text-[22px] leading-tight">{site.name}</h2>
+                <div className="mt-1 text-[12px] text-dim">
+                  {site.subtitle}
+                  {site.siteDossier?.era ? ` · ${site.siteDossier.era}` : ''}
+                </div>
               </div>
               <button
                 type="button"
@@ -704,18 +895,56 @@ export default function VisorHUD() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+
             <p className="mt-3 text-[13px] leading-relaxed text-dim">
-              Every target here has been cored and is in the lander vault. Where to next?
+              Every target here has been cored and sealed in the lander vault.
             </p>
 
-            <div className="mt-4">
-              <SiteList
-                zones={LANDING_ZONES.filter((z) => z.id !== site.id)}
-                currentId={site.id}
-                vaultedSamples={vaultedSamples}
-                onPick={(id) => switchAreaFromEva(id)}
-              />
-            </div>
+            {site.siteDossier && (
+              <div className="mt-4 space-y-3 border-t border-rule pt-4">
+                <div>
+                  <div className="label mb-1 text-accent">Historical significance</div>
+                  <p className="text-[13px] leading-relaxed text-bone/90">
+                    {site.siteDossier.historicalSignificance}
+                  </p>
+                </div>
+
+                <div>
+                  <div className="label mb-1 text-accent">Why this area matters</div>
+                  <p className="text-[13px] leading-relaxed text-bone/90">
+                    {site.siteDossier.scientificImportance}
+                  </p>
+                </div>
+
+                {site.siteDossier.keyDiscoveries?.length > 0 && (
+                  <div className="rounded border border-rule bg-raised/50 p-3">
+                    <div className="label mb-1.5">Key discoveries &amp; heritage</div>
+                    <ul className="space-y-1 text-[12px] text-dim">
+                      {site.siteDossier.keyDiscoveries.map((item) => (
+                        <li key={item} className="flex items-start gap-2">
+                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {rover && (
+                      <div className="mt-2.5 border-t border-rule/70 pt-2 text-[11px] text-dim">
+                        Heritage mission: <span className="text-bone">{rover.name}</span> ·{' '}
+                        {rover.landingName} ({rover.landingDate})
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="label mt-5 mb-1">Next landing site</div>
+            <SiteList
+              zones={LANDING_ZONES.filter((z) => z.id !== site.id)}
+              currentId={site.id}
+              vaultedSamples={vaultedSamples}
+              onPick={(id) => switchAreaFromEva(id)}
+            />
 
             <div className="mt-5 flex gap-2">
               <button
@@ -733,6 +962,223 @@ export default function VisorHUD() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Landing Site Sol 0 Monument Information Modal */}
+      {landingMonumentModalOpen && rover && (
+        <div
+          onClick={() => setLandingMonumentModalOpen(false)}
+          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="panel w-full max-w-lg p-6 text-bone shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-rule pb-3">
+              <div>
+                <div className="font-mono text-[10px] tracking-[0.2em] text-warn">
+                  SOL 0 TOUCHDOWN MONUMENT · {rover.code}
+                </div>
+                <h2 className="mt-0.5 text-lg font-semibold text-bone">
+                  {rover.landingName || 'Rover Landing (Sol 0)'}
+                </h2>
+                <div className="mt-0.5 font-mono text-[11px] text-mist">
+                  {rover.landingCoordinates} · Touchdown {rover.landingDate}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLandingMonumentModalOpen(false)}
+                aria-label="Close landing site info"
+                className="p-1 text-mist hover:text-bone"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs leading-relaxed text-mist">
+              <p className="text-bone/90">{rover.landingStory || rover.keyDiscoveries}</p>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="border border-rule bg-white/[0.02] p-2.5">
+                  <div className="font-mono text-[9px] tracking-wider text-mist">ROVER</div>
+                  <div className="mt-0.5 font-semibold text-bone">{rover.shortName}</div>
+                </div>
+                <div className="border border-rule bg-white/[0.02] p-2.5">
+                  <div className="font-mono text-[9px] tracking-wider text-mist">ODOMETRY</div>
+                  <div className="mt-0.5 font-semibold text-bone">{rover.totalOdometryKm} km</div>
+                </div>
+                <div className="border border-rule bg-white/[0.02] p-2.5">
+                  <div className="font-mono text-[9px] tracking-wider text-mist">LATEST SOL</div>
+                  <div className="mt-0.5 font-semibold text-bone">Sol {rover.latestSol}</div>
+                </div>
+              </div>
+
+              {rover.routeWaypoints?.length > 0 && (
+                <div className="border border-rule bg-white/[0.02] p-3">
+                  <div className="mb-1.5 font-mono text-[10px] tracking-wider text-mist">
+                    HISTORIC TRAVERSE MILESTONES
+                  </div>
+                  <ul className="space-y-1 text-[11px] text-bone/85">
+                    {rover.routeWaypoints.slice(0, 4).map((wp) => (
+                      <li key={wp.id} className="flex items-baseline justify-between gap-2">
+                        <span className="truncate font-medium">• {wp.name}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-mist">{wp.sol}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomPinpoint({
+                    id: rover.id,
+                    name: rover.name,
+                    position: rover.position,
+                    isUnexplored: false,
+                  });
+                  setLandingMonumentModalOpen(false);
+                }}
+                className="btn btn-primary flex-1"
+              >
+                Plot route to {rover.shortName}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLandingMonumentModalOpen(false);
+                  setSlateTab('HERITAGE');
+                  setWristMapOpen(true);
+                }}
+                className="btn"
+              >
+                Sites &amp; Rovers tab
+              </button>
+              <button
+                type="button"
+                onClick={() => setLandingMonumentModalOpen(false)}
+                className="btn"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NASA Rover Heritage & Mission Information Modal */}
+      {roverModalOpen && rover && (
+        <div
+          onClick={() => setRoverModalOpen(false)}
+          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="panel max-h-[88vh] w-full max-w-lg overflow-y-auto p-6 text-bone shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-rule pb-3">
+              <div>
+                <div className="font-mono text-[10px] tracking-[0.2em] text-accent">
+                  {rover.code} · {rover.status}
+                </div>
+                <h2 className="mt-0.5 text-lg font-semibold text-bone">{rover.name}</h2>
+                <div className="mt-0.5 font-mono text-[11px] text-mist">
+                  {rover.agency} · {rover.mission}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoverModalOpen(false)}
+                aria-label="Close rover info"
+                className="p-1 text-mist hover:text-bone"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs leading-relaxed text-mist">
+              <div>
+                <div className="label mb-1 text-accent">Key scientific discoveries</div>
+                <p className="text-bone/90">{rover.keyDiscoveries}</p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="border border-rule bg-white/[0.02] p-2.5">
+                  <div className="font-mono text-[9px] tracking-wider text-mist">ODOMETRY</div>
+                  <div className="mt-0.5 font-semibold text-bone">{rover.totalOdometryKm} km</div>
+                </div>
+                <div className="border border-rule bg-white/[0.02] p-2.5">
+                  <div className="font-mono text-[9px] tracking-wider text-mist">LATEST SOL</div>
+                  <div className="mt-0.5 font-semibold text-bone">Sol {rover.latestSol}</div>
+                </div>
+                <div className="border border-rule bg-white/[0.02] p-2.5">
+                  <div className="font-mono text-[9px] tracking-wider text-mist">TOUCHDOWN</div>
+                  <div className="mt-0.5 truncate font-semibold text-bone">{rover.landingDate}</div>
+                </div>
+              </div>
+
+              <div className="border border-rule bg-white/[0.02] p-3">
+                <div className="mb-1 font-mono text-[10px] tracking-wider text-mist">
+                  SCIENCE PAYLOAD
+                </div>
+                <div className="text-[11px] text-bone/85">{rover.instruments}</div>
+              </div>
+
+              <div className="border-l-2 border-ok pl-3 text-[11px] text-bone/90">
+                Rover dossier unlocked in Field Slate (<kbd>M</kbd> → Sites &amp; Rovers) and ground beyond its track is now open to survey.
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  routeToUnexploredFrontier();
+                  setRoverModalOpen(false);
+                }}
+                className="btn btn-primary flex-1"
+              >
+                Plot route to frontier
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRoverModalOpen(false);
+                  setSlateTab('HERITAGE');
+                  setWristMapOpen(true);
+                }}
+                className="btn"
+              >
+                Sites &amp; Rovers tab
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoverModalOpen(false)}
+                className="btn"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Suit Status & Safety Advisory */}
+      {!wristMapOpen && !menuOpen && !areaCompleteModalOpen && (
+        <div className="pointer-events-none mx-auto mb-1.5 flex max-w-2xl items-center gap-2.5 border border-rule bg-ink/85 px-3 py-1 text-[11px] backdrop-blur-md">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${suitAdvisory.dotClass}`} />
+          <span className={`tnum shrink-0 font-semibold tracking-wider ${suitAdvisory.badgeClass}`}>
+            {suitAdvisory.level}
+          </span>
+          <span className="truncate text-bone">{suitAdvisory.message}</span>
+          <span className="tnum hidden shrink-0 text-mist sm:inline">
+            · {suitAdvisory.meta}
+          </span>
         </div>
       )}
 
@@ -779,9 +1225,8 @@ function SiteList({ zones, currentId, vaultedSamples, onPick }) {
               type="button"
               disabled={isCurrent}
               onClick={() => onPick(zone.id)}
-              className={`group flex w-full items-baseline justify-between gap-4 py-2.5 text-left ${
-                isCurrent ? '' : 'hover:bg-raised'
-              }`}
+              className={`group flex w-full items-baseline justify-between gap-4 py-2.5 text-left ${isCurrent ? '' : 'hover:bg-raised'
+                }`}
             >
               <span className="min-w-0">
                 <span className={`place block truncate text-[15px] ${isCurrent ? 'text-dim' : 'text-bone'}`}>

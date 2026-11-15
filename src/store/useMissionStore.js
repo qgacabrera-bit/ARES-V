@@ -1,12 +1,36 @@
 import { create } from 'zustand';
 import { LANDING_ZONES_BY_ID } from '../data/landingZones';
 import { computeSafeTraversePath } from '../utils/pathfinding';
+import {
+  playCommsChirp,
+  playResupplySound,
+  playScanComplete,
+  playTransitWhoosh,
+  setAudioMuted,
+  startScanHum,
+  stopScanHum,
+  updateScanHum,
+} from '../utils/missionAudio';
 
 export const useMissionStore = create((set, get) => ({
   viewMode: 'ORBIT', // 'ORBIT' | 'EVA'
+  audioMuted: false,
+  expeditionStats: {
+    totalDistanceMeters: 0,
+    totalEvaSeconds: 0,
+    peakRadiationMSv: 0.61,
+    minBodyTempC: 37.0,
+  },
   isTransitioning: false,
+  transitionMode: null, // null | 'DEPLOY' | 'ASCEND' | 'TRANSFER'
   isDeploying: false,
   deployProgress: 0,
+  isAscending: false,
+  ascendProgress: 0,
+  ascendFromSiteId: null,
+  isTransferring: false,
+  transferProgress: 0,
+  transferFromSiteId: null,
   orbitalLayer: 'OPTICAL', // 'OPTICAL' | 'THERMAL' | 'ICE'
   orbitalDataSource: 'LOADING', // 'LOADING' | 'LIVE' | 'SYNTHETIC'
   evaLayer: 'OPTICAL', // 'OPTICAL' | 'TOPOGRAPHY' | 'SPECTRAL' | 'ENV'
@@ -82,7 +106,17 @@ export const useMissionStore = create((set, get) => ({
     gusev: false,
     arcadia: false,
   },
+  discoveredLandingSites: {
+    jezero: false,
+    gale: false,
+    meridiani: false,
+    gusev: false,
+    arcadia: false,
+  },
   nearRover: false,
+  roverModalOpen: false,
+  nearLandingMonument: false,
+  landingMonumentModalOpen: false,
   roverDistance: 14.0,
   customPinpoint: null,
 
@@ -113,12 +147,20 @@ export const useMissionStore = create((set, get) => ({
   deployToSurface: (siteId) => {
     const targetSiteId = siteId || get().selectedSiteId || 'jezero';
     const site = LANDING_ZONES_BY_ID[targetSiteId];
+    playTransitWhoosh('DEPLOY');
     set((state) => ({
       selectedSiteId: targetSiteId,
       hoveredSiteId: null,
       isDeploying: true,
       deployProgress: 0,
+      isAscending: false,
+      ascendProgress: 0,
+      ascendFromSiteId: null,
+      isTransferring: false,
+      transferProgress: 0,
+      transferFromSiteId: null,
       isTransitioning: false,
+      transitionMode: null,
       activeTargetId: null,
       observedTargetId: null,
       wristMapOpen: false,
@@ -154,6 +196,9 @@ export const useMissionStore = create((set, get) => ({
       landerStatusMessage: null,
       abortNotice: null,
       nearRover: false,
+      roverModalOpen: false,
+      nearLandingMonument: false,
+      landingMonumentModalOpen: false,
       roverDistance: 14.0,
       customPinpoint: null,
       telemetry: {
@@ -178,14 +223,48 @@ export const useMissionStore = create((set, get) => ({
       isDeploying: false,
       deployProgress: 0,
       isTransitioning: true,
+      transitionMode: 'DEPLOY',
     });
 
     setTimeout(() => {
-      set({ isTransitioning: false });
+      set({ isTransitioning: false, transitionMode: null });
+    }, 280);
+  },
+
+  updateAscendProgress: (progress) =>
+    set({ ascendProgress: Math.min(1, Math.max(0, progress)) }),
+
+  completeReturnToOrbit: () => {
+    set({
+      isAscending: false,
+      ascendProgress: 0,
+      ascendFromSiteId: null,
+    });
+  },
+
+  updateTransferProgress: (progress) =>
+    set({ transferProgress: Math.min(1, Math.max(0, progress)) }),
+
+  completeSiteTransfer: () => {
+    set({
+      viewMode: 'EVA',
+      evaLayer: 'OPTICAL',
+      evaStartTime: Date.now(),
+      isTransferring: false,
+      transferProgress: 0,
+      transferFromSiteId: null,
+      isTransitioning: true,
+      transitionMode: 'DEPLOY',
+    });
+
+    setTimeout(() => {
+      set({ isTransitioning: false, transitionMode: null });
     }, 280);
   },
 
   returnToOrbit: (reason = null) => {
+    stopScanHum();
+    playTransitWhoosh('ASCEND');
     if (document.pointerLockElement) {
       try {
         document.exitPointerLock();
@@ -193,6 +272,7 @@ export const useMissionStore = create((set, get) => ({
         // Ignore pointer lock exit errors
       }
     }
+    const originSiteId = get().selectedSiteId || 'jezero';
     set((state) => {
       const siteId = state.selectedSiteId;
       const syncedCollected = siteId
@@ -204,8 +284,13 @@ export const useMissionStore = create((set, get) => ({
 
       return {
         isTransitioning: true,
+        transitionMode: 'ASCEND',
         isDeploying: false,
         deployProgress: 0,
+        isAscending: false,
+        ascendProgress: 0,
+        isTransferring: false,
+        transferProgress: 0,
         activeTargetId: null,
         observedTargetId: null,
         wristMapOpen: false,
@@ -224,6 +309,9 @@ export const useMissionStore = create((set, get) => ({
         nearLander: false,
         landerStatusMessage: null,
         nearRover: false,
+        roverModalOpen: false,
+        nearLandingMonument: false,
+        landingMonumentModalOpen: false,
         customPinpoint: null,
         abortNotice:
           reason === 'HYPOXIA'
@@ -236,9 +324,13 @@ export const useMissionStore = create((set, get) => ({
       set((state) => ({
         viewMode: 'ORBIT',
         isTransitioning: false,
+        transitionMode: null,
+        isAscending: true,
+        ascendProgress: 0,
+        ascendFromSiteId: originSiteId,
         telemetry: { ...state.telemetry, pointerLocked: false },
       }));
-    }, 260);
+    }, 240);
   },
 
   clearAbortNotice: () => set({ abortNotice: null }),
@@ -248,6 +340,8 @@ export const useMissionStore = create((set, get) => ({
   switchAreaFromEva: (targetSiteId) => {
     const site = LANDING_ZONES_BY_ID[targetSiteId];
     if (!site) return;
+    stopScanHum();
+    playTransitWhoosh('TRANSFER');
     if (document.pointerLockElement) {
       try {
         document.exitPointerLock();
@@ -255,14 +349,18 @@ export const useMissionStore = create((set, get) => ({
         // Ignore pointer lock exit errors
       }
     }
+    const fromSiteId = get().selectedSiteId || 'jezero';
     set((state) => ({
       selectedSiteId: targetSiteId,
-      viewMode: 'EVA',
       evaLayer: 'OPTICAL',
-      evaStartTime: Date.now(),
       isTransitioning: true,
+      transitionMode: 'TRANSFER',
       isDeploying: false,
       deployProgress: 0,
+      isAscending: false,
+      ascendProgress: 0,
+      isTransferring: false,
+      transferProgress: 0,
       activeTargetId: null,
       observedTargetId: null,
       wristMapOpen: false,
@@ -298,6 +396,9 @@ export const useMissionStore = create((set, get) => ({
       landerStatusMessage: null,
       abortNotice: null,
       nearRover: false,
+      roverModalOpen: false,
+      nearLandingMonument: false,
+      landingMonumentModalOpen: false,
       roverDistance: 14.0,
       customPinpoint: null,
       telemetry: {
@@ -311,8 +412,15 @@ export const useMissionStore = create((set, get) => ({
     }));
 
     setTimeout(() => {
-      set({ isTransitioning: false });
-    }, 280);
+      set({
+        viewMode: 'ORBIT',
+        isTransitioning: false,
+        transitionMode: null,
+        isTransferring: true,
+        transferProgress: 0,
+        transferFromSiteId: fromSiteId,
+      });
+    }, 240);
   },
 
   setWristMapOpen: (open) => {
@@ -355,6 +463,16 @@ export const useMissionStore = create((set, get) => ({
     }));
   },
 
+  discoverLandingSite: (siteId) => {
+    const id = siteId || get().selectedSiteId || 'jezero';
+    set((state) => ({
+      discoveredLandingSites: {
+        ...state.discoveredLandingSites,
+        [id]: true,
+      },
+    }));
+  },
+
   setRoverProximity: (nearRover, roverDistance) => {
     const state = get();
     const roundedDist = Number(roverDistance.toFixed(1));
@@ -364,6 +482,49 @@ export const useMissionStore = create((set, get) => ({
     ) {
       set({ nearRover, roverDistance: roundedDist });
     }
+  },
+
+  setRoverModalOpen: (open) => {
+    if (open && document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore pointer lock exit errors
+      }
+    }
+    const id = get().selectedSiteId || 'jezero';
+    set((state) => ({
+      roverModalOpen: open,
+      discoveredRovers: open
+        ? { ...state.discoveredRovers, [id]: true }
+        : state.discoveredRovers,
+      telemetry: open ? { ...state.telemetry, pointerLocked: false } : state.telemetry,
+    }));
+  },
+
+  setLandingMonumentProximity: (nearLandingMonument) => {
+    if (get().nearLandingMonument !== nearLandingMonument) {
+      set({ nearLandingMonument });
+    }
+  },
+
+  setLandingMonumentModalOpen: (open) => {
+    if (open) playCommsChirp();
+    if (open && document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore pointer lock exit errors
+      }
+    }
+    const id = get().selectedSiteId || 'jezero';
+    set((state) => ({
+      landingMonumentModalOpen: open,
+      discoveredLandingSites: open
+        ? { ...state.discoveredLandingSites, [id]: true }
+        : state.discoveredLandingSites,
+      telemetry: open ? { ...state.telemetry, pointerLocked: false } : state.telemetry,
+    }));
   },
 
   setCustomPinpoint: (pinpoint) => {
@@ -476,6 +637,23 @@ export const useMissionStore = create((set, get) => ({
           }
     ),
 
+  toggleAudioMuted: () =>
+    set((state) => {
+      const next = !state.audioMuted;
+      setAudioMuted(next);
+      return { audioMuted: next };
+    }),
+
+  recordExpeditionTick: (distanceDelta, dtSeconds, radiation, bodyTempC) =>
+    set((state) => ({
+      expeditionStats: {
+        totalDistanceMeters: state.expeditionStats.totalDistanceMeters + Math.max(0, distanceDelta),
+        totalEvaSeconds: state.expeditionStats.totalEvaSeconds + Math.max(0, dtSeconds),
+        peakRadiationMSv: Math.max(state.expeditionStats.peakRadiationMSv, radiation || 0),
+        minBodyTempC: Math.min(state.expeditionStats.minBodyTempC, bodyTempC ?? 37.0),
+      },
+    })),
+
   setSlateTab: (tab) => set({ slateTab: tab }),
 
   setInspectedTargetId: (id) => set({ inspectedTargetId: id }),
@@ -519,6 +697,7 @@ export const useMissionStore = create((set, get) => ({
       return;
     }
 
+    startScanHum();
     set({
       observedTargetId: null,
       scanningState: {
@@ -529,16 +708,20 @@ export const useMissionStore = create((set, get) => ({
     });
   },
 
-  updateScanProgress: (progress) =>
+  updateScanProgress: (progress) => {
+    const clamped = Math.min(100, Math.max(0, progress));
+    updateScanHum(clamped / 100);
     set((state) => ({
       scanningState: {
         ...state.scanningState,
-        progress: Math.min(100, Math.max(0, progress)),
+        progress: clamped,
       },
-    })),
+    }));
+  },
 
   completeScan: (siteId, target) => {
     if (!siteId || !target) return;
+    playScanComplete();
     if (document.pointerLockElement) {
       try {
         document.exitPointerLock();
@@ -588,6 +771,7 @@ export const useMissionStore = create((set, get) => ({
 
   resupplyAndOffloadAtLander: () => {
     const state = get();
+    playResupplySound();
     const siteId = state.selectedSiteId;
     const offloadedCount = state.carriedSamples.length;
     const offloadedMass = state.carriedMassKg;

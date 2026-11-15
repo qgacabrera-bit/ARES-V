@@ -6,12 +6,18 @@ import { LANDING_ZONES_BY_ID } from './data/landingZones';
 import { useMissionStore } from './store/useMissionStore';
 import { computeSafeTraversePath } from './utils/pathfinding';
 import { getTerrainHeightAt } from './utils/terrainMath';
+import { unlockAudio } from './utils/missionAudio';
 
 export default function App() {
   const viewMode = useMissionStore((s) => s.viewMode);
   const isTransitioning = useMissionStore((s) => s.isTransitioning);
+  const transitionMode = useMissionStore((s) => s.transitionMode);
   const isDeploying = useMissionStore((s) => s.isDeploying);
   const deployProgress = useMissionStore((s) => s.deployProgress);
+  const isAscending = useMissionStore((s) => s.isAscending);
+  const ascendProgress = useMissionStore((s) => s.ascendProgress);
+  const isTransferring = useMissionStore((s) => s.isTransferring);
+  const transferProgress = useMissionStore((s) => s.transferProgress);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -19,7 +25,7 @@ export default function App() {
       const state = useMissionStore.getState();
 
       if (state.viewMode === 'ORBIT') {
-        if (state.isDeploying) return;
+        if (state.isDeploying || state.isAscending || state.isTransferring) return;
         if (e.key === '1') state.setOrbitalLayer('OPTICAL');
         else if (e.key === '2') state.setOrbitalLayer('THERMAL');
         else if (e.key === '3') state.setOrbitalLayer('ICE');
@@ -43,7 +49,9 @@ export default function App() {
           } else if (state.nearRover) {
             const siteId = state.selectedSiteId || 'jezero';
             state.discoverRover(siteId);
-            state.routeToUnexploredFrontier();
+            state.setRoverModalOpen(!state.roverModalOpen);
+          } else if (state.nearLandingMonument) {
+            state.setLandingMonumentModalOpen(!state.landingMonumentModalOpen);
           }
         } else if (e.code === 'KeyM' || e.code === 'Tab') {
           e.preventDefault();
@@ -92,8 +100,13 @@ export default function App() {
     };
 
     window.addEventListener('keydown', onKeyDown);
+    const onFirstGesture = () => unlockAudio();
+    window.addEventListener('pointerdown', onFirstGesture, { once: true });
+    window.addEventListener('keydown', onFirstGesture, { once: true });
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onFirstGesture);
+      window.removeEventListener('keydown', onFirstGesture);
     };
   }, []);
 
@@ -101,7 +114,23 @@ export default function App() {
     ? 1
     : isDeploying && deployProgress > 0.82
     ? Math.min(1, (deployProgress - 0.82) / 0.18)
+    : isTransferring && transferProgress > 0.82
+    ? Math.min(1, (transferProgress - 0.82) / 0.18)
+    : (isAscending && ascendProgress < 0.18) || (isTransferring && transferProgress < 0.14)
+    ? Math.max(0, 1 - (isAscending ? ascendProgress / 0.18 : transferProgress / 0.14))
     : 0;
+
+  const isDustVeil =
+    (isDeploying && deployProgress > 0.82) ||
+    (isTransferring && transferProgress > 0.82) ||
+    (isTransitioning && transitionMode === 'DEPLOY');
+
+  const transitionMessage =
+    transitionMode === 'DEPLOY'
+      ? 'Touchdown. Sealing suit…'
+      : transitionMode === 'TRANSFER'
+      ? 'Igniting orbital transfer…'
+      : 'Ascending to orbit…';
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-bone">
@@ -114,16 +143,13 @@ export default function App() {
         className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center transition-opacity duration-200"
         style={{
           opacity: entryVeilOpacity,
-          background:
-            viewMode === 'ORBIT'
-              ? 'radial-gradient(circle at center, rgba(193,106,67,0.92) 0%, rgba(120,53,30,0.98) 100%)'
-              : 'rgba(0,0,0,0.88)',
+          background: isDustVeil
+            ? 'radial-gradient(circle at center, rgba(193,106,67,0.92) 0%, rgba(120,53,30,0.98) 100%)'
+            : 'rgba(0,0,0,0.88)',
         }}
       >
         {isTransitioning && (
-          <div className="text-[14px] text-bone">
-            {viewMode === 'ORBIT' ? 'Touchdown. Sealing suit…' : 'Ascending to orbit…'}
-          </div>
+          <div className="text-[14px] text-bone">{transitionMessage}</div>
         )}
       </div>
     </main>

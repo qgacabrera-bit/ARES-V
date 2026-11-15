@@ -334,6 +334,8 @@ function LandingBeacon({ site, isSelected, isHovered, isDeployingTarget, deployP
 }
 
 const DEPLOY_DURATION_SEC = 1.75;
+const ASCEND_DURATION_SEC = 1.35;
+const TRANSFER_DURATION_SEC = 2.15;
 const SLEW_DURATION_SEC = 0.7;
 
 function smoothstep(edge0, edge1, x) {
@@ -362,11 +364,21 @@ export default function OrbitGlobe() {
   const hoveredSiteId = useMissionStore((s) => s.hoveredSiteId);
   const isDeploying = useMissionStore((s) => s.isDeploying);
   const deployProgress = useMissionStore((s) => s.deployProgress);
+  const isAscending = useMissionStore((s) => s.isAscending);
+  const ascendFromSiteId = useMissionStore((s) => s.ascendFromSiteId);
+  const isTransferring = useMissionStore((s) => s.isTransferring);
+  const transferFromSiteId = useMissionStore((s) => s.transferFromSiteId);
   const selectSite = useMissionStore((s) => s.selectSite);
   const setHoveredSite = useMissionStore((s) => s.setHoveredSite);
   const setOrbitalDataSource = useMissionStore((s) => s.setOrbitalDataSource);
   const updateDeployProgress = useMissionStore((s) => s.updateDeployProgress);
   const completeDeployToSurface = useMissionStore((s) => s.completeDeployToSurface);
+  const updateAscendProgress = useMissionStore((s) => s.updateAscendProgress);
+  const completeReturnToOrbit = useMissionStore((s) => s.completeReturnToOrbit);
+  const updateTransferProgress = useMissionStore((s) => s.updateTransferProgress);
+  const completeSiteTransfer = useMissionStore((s) => s.completeSiteTransfer);
+
+  const isInTransit = isDeploying || isAscending || isTransferring;
 
   const { camera } = useThree();
   const [marsTextures, setMarsTextures] = useState(null);
@@ -386,16 +398,54 @@ export default function OrbitGlobe() {
     startTarget: new THREE.Vector3(0, 0, 0),
   });
 
+  const ascendAnimRef = useRef({
+    elapsed: 0,
+    completed: false,
+  });
+
+  const transferAnimRef = useRef({
+    elapsed: 0,
+    completed: false,
+  });
+
   const identQuat = useMemo(() => new THREE.Quaternion(), []);
   const tempQuat = useMemo(() => new THREE.Quaternion(), []);
   const tempCurDir = useMemo(() => new THREE.Vector3(), []);
   const tempWorldBeacon = useMemo(() => new THREE.Vector3(), []);
   const tempWorldNormal = useMemo(() => new THREE.Vector3(), []);
+  const tempFromBeacon = useMemo(() => new THREE.Vector3(), []);
+  const tempFromNormal = useMemo(() => new THREE.Vector3(), []);
   const tempLookTarget = useMemo(() => new THREE.Vector3(), []);
+  const originVec = useMemo(() => new THREE.Vector3(0, 0, 0), []);
 
   useEffect(() => {
     camera.rotation.order = 'XYZ';
     camera.up.set(0, 1, 0);
+
+    const state = useMissionStore.getState();
+    const transitOriginId = state.isAscending
+      ? state.ascendFromSiteId
+      : state.isTransferring
+      ? state.transferFromSiteId
+      : null;
+
+    if (transitOriginId && globeGroupRef.current) {
+      const originSite =
+        LANDING_ZONES.find((z) => z.id === transitOriginId) || LANDING_ZONES[0];
+      globeGroupRef.current.updateMatrixWorld();
+      const [lx, ly, lz] = latLonToVector3(
+        originSite.lat,
+        originSite.lon,
+        GLOBE_RADIUS + 0.042
+      );
+      const worldNormal = new THREE.Vector3(lx, ly, lz)
+        .applyMatrix4(globeGroupRef.current.matrixWorld)
+        .normalize();
+      camera.position.copy(worldNormal).multiplyScalar(GLOBE_RADIUS + 0.09);
+      camera.lookAt(worldNormal.clone().multiplyScalar(GLOBE_RADIUS * 0.96));
+      return;
+    }
+
     camera.position.set(0, 1.44, 8.9);
     camera.lookAt(0, 0, 0);
     if (controlsRef.current) {
@@ -406,14 +456,14 @@ export default function OrbitGlobe() {
 
   // Stage 1: Smooth camera alignment slew when clicking a landing beacon
   useEffect(() => {
-    if (!selectedSiteId || isDeploying) return;
+    if (!selectedSiteId || isInTransit) return;
     slewRef.current = {
       active: true,
       elapsed: 0,
       startDir: camera.position.clone().normalize(),
       radius: Math.max(5.25, camera.position.length()),
     };
-  }, [selectedSiteId, isDeploying, camera]);
+  }, [selectedSiteId, isInTransit, camera]);
 
   // Stage 2: Capture initial orbital vector when deployment dive starts
   useEffect(() => {
@@ -429,6 +479,18 @@ export default function OrbitGlobe() {
         : new THREE.Vector3(0, 0, 0),
     };
   }, [isDeploying, camera]);
+
+  useEffect(() => {
+    if (!isAscending) return;
+    slewRef.current.active = false;
+    ascendAnimRef.current = { elapsed: 0, completed: false };
+  }, [isAscending]);
+
+  useEffect(() => {
+    if (!isTransferring) return;
+    slewRef.current.active = false;
+    transferAnimRef.current = { elapsed: 0, completed: false };
+  }, [isTransferring]);
 
   const placeholderTex = useMemo(() => createPlaceholderTexture(), []);
 
@@ -553,13 +615,105 @@ export default function OrbitGlobe() {
       atmosMatRef.current.uniforms.uColor.value.lerp(targetAtmosColor, Math.min(1, dt * 4));
     }
 
-    if (globeGroupRef.current && !hoveredSiteId && !selectedSiteId && !isDeploying) {
+    if (globeGroupRef.current && !hoveredSiteId && !selectedSiteId && !isInTransit) {
       globeGroupRef.current.rotation.y += dt * 0.03;
+    }
+
+    if (globeGroupRef.current && isAscending && !ascendAnimRef.current.completed) {
+      const originSite =
+        LANDING_ZONES.find((z) => z.id === ascendFromSiteId) || LANDING_ZONES[0];
+      globeGroupRef.current.updateMatrixWorld();
+      const [fx, fy, fz] = latLonToVector3(originSite.lat, originSite.lon, GLOBE_RADIUS + 0.042);
+      tempFromBeacon.set(fx, fy, fz).applyMatrix4(globeGroupRef.current.matrixWorld);
+      tempFromNormal.copy(tempFromBeacon).normalize();
+
+      const anim = ascendAnimRef.current;
+      anim.elapsed += dt;
+      const progress = Math.min(1, anim.elapsed / ASCEND_DURATION_SEC);
+      updateAscendProgress(progress);
+
+      const desiredDir = tempFromNormal.clone().add(new THREE.Vector3(0, 0.08, 0)).normalize();
+      const qDelta = safeUnitRotation(tempFromNormal, desiredDir);
+      tempQuat.slerpQuaternions(identQuat, qDelta, smoothstep(0.15, 0.85, progress));
+      tempCurDir.copy(tempFromNormal).applyQuaternion(tempQuat).normalize();
+
+      const rToEntry = THREE.MathUtils.lerp(
+        GLOBE_RADIUS + 0.09,
+        GLOBE_RADIUS + 2.0,
+        smoothstep(0.0, 0.45, progress)
+      );
+      const radius = THREE.MathUtils.lerp(rToEntry, 8.9, smoothstep(0.32, 1.0, progress));
+      camera.position.copy(tempCurDir).multiplyScalar(radius);
+
+      const surfaceGoal = tempFromNormal.clone().multiplyScalar(GLOBE_RADIUS * 0.96);
+      tempLookTarget.lerpVectors(surfaceGoal, originVec, smoothstep(0.15, 0.85, progress));
+      camera.lookAt(tempLookTarget);
+
+      if (progress >= 1.0) {
+        anim.completed = true;
+        if (controlsRef.current) {
+          controlsRef.current.target.set(0, 0, 0);
+          controlsRef.current.update();
+        }
+        completeReturnToOrbit();
+      }
+      return;
     }
 
     const activeSite = selectedSiteId
       ? LANDING_ZONES.find((z) => z.id === selectedSiteId)
       : null;
+
+    if (globeGroupRef.current && isTransferring && activeSite && !transferAnimRef.current.completed) {
+      const originSite =
+        LANDING_ZONES.find((z) => z.id === transferFromSiteId) || activeSite;
+      globeGroupRef.current.updateMatrixWorld();
+
+      const [fx, fy, fz] = latLonToVector3(originSite.lat, originSite.lon, GLOBE_RADIUS + 0.042);
+      tempFromBeacon.set(fx, fy, fz).applyMatrix4(globeGroupRef.current.matrixWorld);
+      tempFromNormal.copy(tempFromBeacon).normalize();
+
+      const [tx, ty, tz] = latLonToVector3(activeSite.lat, activeSite.lon, GLOBE_RADIUS + 0.042);
+      tempWorldBeacon.set(tx, ty, tz).applyMatrix4(globeGroupRef.current.matrixWorld);
+      tempWorldNormal.copy(tempWorldBeacon).normalize();
+
+      const anim = transferAnimRef.current;
+      anim.elapsed += dt;
+      const progress = Math.min(1, anim.elapsed / TRANSFER_DURATION_SEC);
+      updateTransferProgress(progress);
+
+      const pAlign = smoothstep(0.20, 0.76, progress);
+      const qDelta = safeUnitRotation(tempFromNormal, tempWorldNormal);
+      tempQuat.slerpQuaternions(identQuat, qDelta, pAlign);
+      tempCurDir.copy(tempFromNormal).applyQuaternion(tempQuat).normalize();
+
+      const rAscent = THREE.MathUtils.lerp(
+        GLOBE_RADIUS + 0.09,
+        GLOBE_RADIUS + 2.9,
+        smoothstep(0.0, 0.42, progress)
+      );
+      const radius = THREE.MathUtils.lerp(
+        rAscent,
+        GLOBE_RADIUS + 0.09,
+        smoothstep(0.58, 1.0, progress)
+      );
+      camera.position.copy(tempCurDir).multiplyScalar(radius);
+
+      const fromGoal = tempFromNormal.clone().multiplyScalar(GLOBE_RADIUS * 0.96);
+      const toGoal = tempWorldNormal.clone().multiplyScalar(GLOBE_RADIUS * 0.96);
+      if (progress < 0.5) {
+        tempLookTarget.lerpVectors(fromGoal, originVec, smoothstep(0.06, 0.38, progress));
+      } else {
+        tempLookTarget.lerpVectors(originVec, toGoal, smoothstep(0.60, 0.92, progress));
+      }
+      camera.lookAt(tempLookTarget);
+
+      if (progress >= 1.0) {
+        anim.completed = true;
+        completeSiteTransfer();
+      }
+      return;
+    }
 
     if (globeGroupRef.current && activeSite) {
       globeGroupRef.current.updateMatrixWorld();
@@ -646,7 +800,7 @@ export default function OrbitGlobe() {
 
       {/* Initial Y rotation centers Jezero, Gale & Arcadia on the front sunlit hemisphere */}
       <group ref={globeGroupRef} rotation={[0.12, Math.PI * 0.75, 0]}>
-        <mesh renderOrder={1} onClick={() => !isDeploying && selectSite(null)}>
+        <mesh renderOrder={1} onClick={() => !isInTransit && selectSite(null)}>
           <sphereGeometry args={[GLOBE_RADIUS, 128, 128]} />
           <meshStandardMaterial
             key={marsTextures ? 'nasa-maps-loaded' : 'nasa-maps-init'}
@@ -692,10 +846,10 @@ export default function OrbitGlobe() {
               site={site}
               isSelected={selectedSiteId === site.id}
               isHovered={hoveredSiteId === site.id}
-              isDeployingTarget={isDeploying && selectedSiteId === site.id}
+              isDeployingTarget={isInTransit && selectedSiteId === site.id}
               deployProgress={deployProgress}
-              onSelect={(id) => !isDeploying && selectSite(id)}
-              onHover={(id) => !isDeploying && setHoveredSite(id)}
+              onSelect={(id) => !isInTransit && selectSite(id)}
+              onHover={(id) => !isInTransit && setHoveredSite(id)}
             />
           </React.Fragment>
         ))}
@@ -703,7 +857,7 @@ export default function OrbitGlobe() {
 
       <OrbitControls
         ref={controlsRef}
-        enabled={!isDeploying}
+        enabled={!isInTransit}
         onStart={() => {
           slewRef.current.active = false;
         }}
